@@ -10,15 +10,15 @@
  * @package ComicEaselREST
  */
 
-if ( ! defined( 'ABSPATH' ) ) {
-	exit;
-}
-
 namespace ComicEaselRest;
 
 use WP_REST_Controller;
 use WP_REST_Server;
 use WP_Error;
+
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
 
 class REST_Controller extends WP_REST_Controller {
 

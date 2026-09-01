@@ -31,12 +31,15 @@ download() {
 	fi
 }
 
+resolve_latest_wp_version() {
+	svn ls https://develop.svn.wordpress.org/tags/ | tail -n 1 | tr -d '/'
+}
+
 if [[ ! -d "$WP_TESTS_DIR" ]]; then
 	echo "Cloning WordPress test suite..."
 	mkdir -p "$(dirname "$WP_TESTS_DIR")"
 	if [[ "$WP_VERSION" == "latest" ]]; then
-		local LATEST_TAG=$(svn ls https://develop.svn.wordpress.org/tags/ | tail -n 1 | tr -d '/')
-		WP_VERSION="$LATEST_TAG"
+		WP_VERSION="$(resolve_latest_wp_version)"
 	fi
 	svn co --quiet "https://develop.svn.wordpress.org/tags/${WP_VERSION}/tests/phpunit/includes/" "$WP_TESTS_DIR/includes"
 	svn co --quiet "https://develop.svn.wordpress.org/tags/${WP_VERSION}/tests/phpunit/data/" "$WP_TESTS_DIR/data"
@@ -46,8 +49,7 @@ if [[ ! -d "$WP_CORE_DIR" ]]; then
 	echo "Downloading WordPress ${WP_VERSION}..."
 	mkdir -p "$WP_CORE_DIR"
 	if [[ "$WP_VERSION" == "latest" ]]; then
-		local LATEST_TAG=$(svn ls https://develop.svn.wordpress.org/tags/ | tail -n 1 | tr -d '/')
-		WP_VERSION="$LATEST_TAG"
+		WP_VERSION="$(resolve_latest_wp_version)"
 	fi
 	svn co --quiet "https://develop.svn.wordpress.org/tags/${WP_VERSION}/" "$WP_CORE_DIR"
 fi
