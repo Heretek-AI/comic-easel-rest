@@ -124,7 +124,7 @@ function cer_init_option_defaults() {
  * @param string $option   Option name.
  * @param bool   $autoload Desired autoload state.
  */
-function cer_ensure_option_autoload( $option, $autoload = true ) {
+function cer_ensure_option_autoload( $option, $autoload = true ) { // NOSONAR: cer_* snake_case is the project naming convention.
 	if ( function_exists( 'wp_set_option_autoload' ) ) {
 		wp_set_option_autoload( $option, $autoload );
 		return;

@@ -28,6 +28,6 @@ function ceo_pluginfo( $key = '' ) { // NOSONAR: stub mirrors the parent comic-e
  * @param string $option Option name.
  * @return string|bool 'on' | 'off' | 'auto' on WP 6.6+; bool on older stubs.
  */
-function wp_get_option_autoload( $option ) {
+function wp_get_option_autoload( $option ) { // NOSONAR: stub mirrors WordPress' real public signature so Phan/Psalm can type-check callers; parameter is required by shape even though the stub body doesn't use it.
     return 'on';
 }
