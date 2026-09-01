@@ -1,0 +1,34 @@
+<?xml version="1.0"?>
+<psalm
+    errorLevel="3"
+    resolveFromConfigFile="true"
+    allFunctionsGlobal="true"
+    allConstantsGlobal="true"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xmlns="https://getpsalm.org/schema/config"
+    xsi:schemaLocation="https://getpsalm.org/schema/config vendor/vimeo/psalm/config.xsd"
+    errorBaseline="psalm-baseline.xml"
+>
+    <projectFiles>
+        <directory name="functions"/>
+        <directory name="includes"/>
+        <directory name="tests"/>
+        <file name="comic-easel-rest.php"/>
+        <file name="uninstall.php"/>
+        <ignoreFiles>
+            <directory name="vendor"/>
+        </ignoreFiles>
+    </projectFiles>
+
+    <!--
+        WordPress and the comic-easel parent plugin are unknown to Psalm without
+        these stubs. preloadClasses=true is needed because the stubbed classes
+        extend one another (WP_Error, WP_REST_Controller, WP_UnitTestCase, ...).
+    -->
+    <stubs>
+        <file name="vendor/php-stubs/wordpress-stubs/wordpress-stubs.php" preloadClasses="true"/>
+        <file name="vendor/php-stubs/wordpress-tests-stubs/wordpress-tests-stubs.php" preloadClasses="true"/>
+        <file name="stubs/comic-easel-stubs.php"/>
+        <file name="stubs/wordpress-constants-stubs.php"/>
+    </stubs>
+</psalm>

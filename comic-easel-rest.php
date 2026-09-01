@@ -10,8 +10,8 @@ Text Domain: comic-easel-rest
 Domain Path: /languages
 License: GPLv3 or later
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
-Requires at least: 5.6
-Requires PHP: 7.4
+Requires at least: 6.0
+Requires PHP: 8.1
 Update URI: https://github.com/Heretek-AI/comic-easel-rest
 
 This program is free software; you can redistribute it and/or modify
@@ -88,6 +88,7 @@ function cer_load_textdomain() {
 /**
  * Initialise the plugin's option defaults. Called on activation and on every
  * boot so a fresh install picks up defaults without requiring activation.
+ * Also ensures the option is autoloaded — settings are read on every request.
  */
 function cer_init_option_defaults() {
 	$existing = get_option( CER_OPTION_KEY, array() );
@@ -104,8 +105,54 @@ function cer_init_option_defaults() {
 	);
 	$merged = array_merge( $defaults, $existing );
 	if ( $merged !== $existing ) {
-		update_option( CER_OPTION_KEY, $merged, '', 'yes' );
+		// Autoload yes: the settings are read on every request.
+		update_option( CER_OPTION_KEY, $merged, true );
+	} else {
+		// Values already match, but autoload may still be off (e.g. option
+		// was written by an older version without the autoload arg). Flip
+		// it to 'yes' without touching the value.
+		cer_ensure_option_autoload( CER_OPTION_KEY, true );
 	}
+}
+
+/**
+ * Set the autoload flag on a single option without changing its value.
+ * Uses wp_set_option_autoload() when available (WordPress 6.4+); falls back
+ * to a direct $wpdb update for 5.6–6.3 so the plugin still ships the
+ * autoload fix to older installs.
+ *
+ * Caller should already know the autoload differs from the desired value;
+ * this function performs the write unconditionally and invalidates the
+ * Options API alloptions object cache so persistent object caches see
+ * the change on the next request.
+ *
+ * @param string $option   Option name.
+ * @param bool   $autoload Desired autoload state.
+ */
+function cer_ensure_option_autoload( $option, $autoload = true ) { // NOSONAR: cer_* snake_case is the project naming convention.
+	if ( function_exists( 'wp_set_option_autoload' ) ) {
+		wp_set_option_autoload( $option, $autoload );
+		return;
+	}
+	global $wpdb;
+	// WP 5.6-6.3 stored 'yes' / 'no' in the autoload column. WP 6.7+
+	// normalises to 'on' / 'off', but wp_set_option_autoload (above) is
+	// available from WP 6.4 so this fallback only runs on the legacy
+	// spellings.
+	$value = $autoload ? 'yes' : 'no';
+	// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+	$wpdb->query(
+		$wpdb->prepare(
+			"UPDATE {$wpdb->options} SET autoload = %s WHERE option_name = %s",
+			$value,
+			$option
+		)
+	);
+	// Invalidate the Options API alloptions cache so persistent object
+	// caches don't keep serving the old autoload value on the next
+	// request. update_option() handles this internally; our $wpdb path
+	// bypasses that helper.
+	wp_cache_delete( 'alloptions', 'options' );
 }
 
 /**
