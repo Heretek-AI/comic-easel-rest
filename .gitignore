@@ -1,6 +1,7 @@
 .DS_Store
 /vendor/
 /.phpunit.cache/
+/.phpunit.result.cache
 /.phpcs-cache
 **/__pycache__/
 *.pyc

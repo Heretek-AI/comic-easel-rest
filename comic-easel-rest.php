@@ -54,7 +54,11 @@ add_action( 'plugins_loaded', 'cer_load_textdomain' );
  * if the parent comic-easel plugin is loaded.
  */
 function cer_boot() {
-	if ( ! function_exists( 'ceo_pluginfo' ) || ! post_type_exists( 'comic' ) ) {
+	// comic-easel defines ceo_pluginfo() at plugin load, but registers the
+	// `comic` CPT on `init` — after `plugins_loaded`. Checking the post type
+	// here would make the whole companion a no-op, so gate only on the parent
+	// plugin being present.
+	if ( ! function_exists( 'ceo_pluginfo' ) ) {
 		add_action( 'admin_notices', 'cer_parent_missing_notice' );
 		return;
 	}
@@ -66,7 +70,7 @@ function cer_boot() {
 	}
 
 	if ( cer_get_option( 'enable_rest_namespace' ) ) {
-		add_action( 'rest_api_init', array( 'ComicEaselRest\\REST_Controller', 'register_routes' ) );
+		add_action( 'rest_api_init', array( new ComicEaselRest\REST_Controller(), 'register_routes' ) );
 	}
 }
 

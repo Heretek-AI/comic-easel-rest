@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `register_{$post_type}_post_type_args` and `register_{$tax}_taxonomy_args`.
   Idempotent — preserves `rest_base` and `rest_controller_class` set by other
   plugins.
-- **REST controller** under the `comic-easel/v1` namespace with five endpoints:
+- **REST controller** under the `comic-easel/v1` namespace with six endpoints:
   - `POST /comics/with-thumbnail` — create a comic post with a featured image
     (base64 payload, data URL, or remote URL) in one request.
   - `POST /chapters` — create a chapter term.

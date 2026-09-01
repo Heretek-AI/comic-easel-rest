@@ -3,23 +3,30 @@
  * PHPUnit bootstrap for Comic Easel REST.
  *
  * Uses the standard WordPress test suite (WP_UnitTestCase,
- * WP_Test_REST_TestCase) loaded via bin/install-wp-tests.sh. Requires
- * WP_TESTS_DIR to be set (it is by install-wp-tests.sh).
+ * WP_Test_REST_TestCase) loaded via bin/install-wp-tests.sh, which also
+ * installs WP core + plugins and generates the required wp-tests-config.php
+ * (ABSPATH and DB constants included). WP_TESTS_DIR is honoured from the
+ * environment when set (default /tmp/wordpress-tests-lib).
  *
  * @package ComicEaselREST
  */
 
-// ABSPATH and WPINC must be defined before requiring any WP files.
-if ( ! defined( 'ABSPATH' ) ) {
-	define( 'ABSPATH', '/tmp/wordpress/' );
+$wp_tests_dir = getenv( 'WP_TESTS_DIR' );
+if ( ! $wp_tests_dir ) {
+	$wp_tests_dir = '/tmp/wordpress-tests-lib';
 }
-
-if ( ! defined( 'WP_TESTS_DIR' ) ) {
-	fwrite( STDERR, "WP_TESTS_DIR is not set. Run bin/install-wp-tests.sh first.\n" );
+if ( ! file_exists( $wp_tests_dir . '/includes/functions.php' ) ) {
+	fwrite( STDERR, "WordPress test suite not found at {$wp_tests_dir}. Run bin/install-wp-tests.sh first.\n" );
 	exit( 1 );
 }
+define( 'WP_TESTS_DIR', $wp_tests_dir );
 
 require_once WP_TESTS_DIR . '/includes/functions.php';
+
+// The WP test suite (6.5+) requires the PHPUnit Polyfills library. It ships
+// as a dev dependency of this plugin, so load its autoloader before the WP
+// test bootstrap and avoid the suite's default path lookup.
+require_once dirname( __DIR__ ) . '/vendor/yoast/phpunit-polyfills/phpunitpolyfills-autoload.php';
 
 // Both the parent plugin (comic-easel) and the companion must be installed
 // into /tmp/wordpress/wp-content/plugins by bin/install-wp-tests.sh. The WP

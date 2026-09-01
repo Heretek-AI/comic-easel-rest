@@ -2,7 +2,7 @@
 /**
  * REST controller for Comic Easel REST.
  *
- * Registers five endpoints under the `comic-easel/v1` namespace. Callbacks
+ * Registers six endpoints under the `comic-easel/v1` namespace. Callbacks
  * delegate to procedural `cer_*` functions in functions/settings.php — the
  * WooCommerce-style split where OOP handles route registration and
  * procedural handles business logic.
@@ -32,15 +32,15 @@ class REST_Controller extends WP_REST_Controller {
 	}
 
 	/**
-	 * Register all five routes.
+	 * Register all six routes. Overrides the parent's instance method, so call
+	 * it on an instance (see the rest_api_init hook in comic-easel-rest.php).
 	 */
-	public static function register_routes() {
-		$ctrl = new self();
-		$ctrl->register_endpoint_with_thumbnail();
-		$ctrl->register_endpoint_chapter();
-		$ctrl->register_endpoint_schedule();
-		$ctrl->register_endpoint_settings();
-		$ctrl->register_endpoint_bulk_import();
+	public function register_routes() {
+		$this->register_endpoint_with_thumbnail();
+		$this->register_endpoint_chapter();
+		$this->register_endpoint_schedule();
+		$this->register_endpoint_settings();
+		$this->register_endpoint_bulk_import();
 	}
 
 	/**
