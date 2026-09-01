@@ -17,13 +17,6 @@
     <ArgumentTypeCoercion>
       <code><![CDATA[$args]]></code>
     </ArgumentTypeCoercion>
-    <PossiblyFalseArgument>
-      <code><![CDATA[sprintf(
-				/* translators: %s: option key */
-				__( 'Option %s is not whitelisted.', 'comic-easel-rest' ),
-				$key
-			)]]></code>
-    </PossiblyFalseArgument>
     <UnusedParam>
       <code><![CDATA[$request]]></code>
     </UnusedParam>
@@ -70,6 +63,15 @@
     </MissingOverrideAttribute>
     <UnusedClass>
       <code><![CDATA[CPT_ShimTest]]></code>
+    </UnusedClass>
+  </file>
+  <file src="tests/OptionDefaultsTest.php">
+    <MissingOverrideAttribute>
+      <code><![CDATA[public function set_up() {]]></code>
+      <code><![CDATA[public function tear_down() {]]></code>
+    </MissingOverrideAttribute>
+    <UnusedClass>
+      <code><![CDATA[OptionDefaultsTest]]></code>
     </UnusedClass>
   </file>
   <file src="tests/REST_ControllerTest.php">
