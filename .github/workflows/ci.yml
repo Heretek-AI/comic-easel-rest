@@ -63,6 +63,30 @@ jobs:
   # it touches. Same rationale as comic-easel: the sniffs cannot see through
   # apply_filters() to an escaper inside it, and a job that is red by default
   # is a job everyone learns to scroll past. Advisory, not a gate.
+  # Static analysis with Phan + Psalm. Required: both run against committed
+  # baselines (.phan/baseline.php, psalm-baseline.xml), so the job is green on
+  # master and only NEW findings fail the build. Regenerate baselines with
+  # `vendor/bin/phan --save-baseline=.phan/baseline.php` and
+  # `vendor/bin/psalm --set-baseline=psalm-baseline.xml` when analysed code
+  # moves.
+  static-analysis:
+    name: Static analysis (Phan + Psalm)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+          # Phan 6 needs the ast extension for full analysis.
+          extensions: ast
+      - name: Install composer deps
+        run: composer update --no-interaction --prefer-dist
+      - name: Run Phan
+        run: vendor/bin/phan --no-progress-bar --output-mode=github
+      - name: Run Psalm
+        run: vendor/bin/psalm --no-progress --output-format=github
+
   phpcs:
     name: PHPCS (advisory, changed lines)
     runs-on: ubuntu-latest

@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<files psalm-version="6.16.1@f1f5de594dc76faf8784e02d3dc4716c91c6f6ac">
+  <file src="comic-easel-rest.php">
+    <PossiblyInvalidArgument>
+      <code><![CDATA['cer_activation']]></code>
+      <code><![CDATA['cer_deactivation']]></code>
+    </PossiblyInvalidArgument>
+  </file>
+  <file src="functions/helpers.php">
+    <MissingFile>
+      <code><![CDATA[require_once ABSPATH . 'wp-admin/includes/file.php']]></code>
+      <code><![CDATA[require_once ABSPATH . 'wp-admin/includes/image.php']]></code>
+      <code><![CDATA[require_once ABSPATH . 'wp-admin/includes/media.php']]></code>
+    </MissingFile>
+  </file>
+  <file src="functions/settings.php">
+    <ArgumentTypeCoercion>
+      <code><![CDATA[$args]]></code>
+    </ArgumentTypeCoercion>
+    <PossiblyFalseArgument>
+      <code><![CDATA[sprintf(
+				/* translators: %s: option key */
+				__( 'Option %s is not whitelisted.', 'comic-easel-rest' ),
+				$key
+			)]]></code>
+    </PossiblyFalseArgument>
+    <UnusedParam>
+      <code><![CDATA[$request]]></code>
+    </UnusedParam>
+  </file>
+  <file src="includes/class-cpt-shim.php">
+    <PossiblyUnusedReturnValue>
+      <code><![CDATA[array]]></code>
+      <code><![CDATA[array]]></code>
+    </PossiblyUnusedReturnValue>
+  </file>
+  <file src="includes/class-rest-controller.php">
+    <ArgumentTypeCoercion>
+      <code><![CDATA[$this->namespace]]></code>
+      <code><![CDATA[$this->namespace]]></code>
+      <code><![CDATA[$this->namespace]]></code>
+      <code><![CDATA[$this->namespace]]></code>
+      <code><![CDATA[$this->namespace]]></code>
+    </ArgumentTypeCoercion>
+    <MissingOverrideAttribute>
+      <code><![CDATA[public function register_routes() {]]></code>
+    </MissingOverrideAttribute>
+    <PossiblyUnusedMethod>
+      <code><![CDATA[permissions_check_create]]></code>
+      <code><![CDATA[permissions_check_manage_options]]></code>
+      <code><![CDATA[permissions_check_publish]]></code>
+      <code><![CDATA[permissions_check_read]]></code>
+      <code><![CDATA[route_bulk_import]]></code>
+      <code><![CDATA[route_chapter]]></code>
+      <code><![CDATA[route_schedule]]></code>
+      <code><![CDATA[route_settings_read]]></code>
+      <code><![CDATA[route_settings_update]]></code>
+      <code><![CDATA[route_with_thumbnail]]></code>
+    </PossiblyUnusedMethod>
+    <PossiblyUnusedParam>
+      <code><![CDATA[$request]]></code>
+      <code><![CDATA[$request]]></code>
+      <code><![CDATA[$request]]></code>
+      <code><![CDATA[$request]]></code>
+    </PossiblyUnusedParam>
+  </file>
+  <file src="tests/CPT_ShimTest.php">
+    <MissingOverrideAttribute>
+      <code><![CDATA[public function set_up() {]]></code>
+    </MissingOverrideAttribute>
+    <UnusedClass>
+      <code><![CDATA[CPT_ShimTest]]></code>
+    </UnusedClass>
+  </file>
+  <file src="tests/REST_ControllerTest.php">
+    <MissingOverrideAttribute>
+      <code><![CDATA[public function set_up() {]]></code>
+    </MissingOverrideAttribute>
+    <PossiblyInvalidPropertyAssignmentValue>
+      <code><![CDATA[$factory->user->create( array( 'role' => 'administrator' ) )]]></code>
+    </PossiblyInvalidPropertyAssignmentValue>
+    <UnusedClass>
+      <code><![CDATA[REST_ControllerTest]]></code>
+    </UnusedClass>
+  </file>
+</files>

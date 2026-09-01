@@ -13,8 +13,8 @@
 namespace ComicEaselRest;
 
 use WP_REST_Controller;
+use WP_REST_Request;
 use WP_REST_Server;
-use WP_Error;
 
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
@@ -228,45 +228,45 @@ class REST_Controller extends WP_REST_Controller {
 
 	// ── Permission callbacks ─────────────────────────────────────────────
 
-	public function permissions_check_read( $request ) {
+	public function permissions_check_read( WP_REST_Request $request ) {
 		return current_user_can( 'edit_posts' );
 	}
 
-	public function permissions_check_create( $request ) {
+	public function permissions_check_create( WP_REST_Request $request ) {
 		return current_user_can( 'edit_posts' ) && current_user_can( 'upload_files' );
 	}
 
-	public function permissions_check_publish( $request ) {
+	public function permissions_check_publish( WP_REST_Request $request ) {
 		return current_user_can( 'publish_posts' ) && current_user_can( 'upload_files' );
 	}
 
-	public function permissions_check_manage_options( $request ) {
+	public function permissions_check_manage_options( WP_REST_Request $request ) {
 		return current_user_can( 'manage_options' );
 	}
 
 	// ── Route callbacks (delegated to procedural functions) ──────────────
 
-	public function route_with_thumbnail( $request ) {
+	public function route_with_thumbnail( WP_REST_Request $request ) {
 		return cer_create_with_thumbnail( $request );
 	}
 
-	public function route_chapter( $request ) {
+	public function route_chapter( WP_REST_Request $request ) {
 		return cer_create_chapter( $request );
 	}
 
-	public function route_schedule( $request ) {
+	public function route_schedule( WP_REST_Request $request ) {
 		return cer_schedule_comic( $request );
 	}
 
-	public function route_settings_read( $request ) {
+	public function route_settings_read( WP_REST_Request $request ) {
 		return cer_get_settings( $request );
 	}
 
-	public function route_settings_update( $request ) {
+	public function route_settings_update( WP_REST_Request $request ) {
 		return cer_update_settings( $request );
 	}
 
-	public function route_bulk_import( $request ) {
+	public function route_bulk_import( WP_REST_Request $request ) {
 		return cer_bulk_import( $request );
 	}
 }

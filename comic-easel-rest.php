@@ -104,7 +104,8 @@ function cer_init_option_defaults() {
 	);
 	$merged = array_merge( $defaults, $existing );
 	if ( $merged !== $existing ) {
-		update_option( CER_OPTION_KEY, $merged, '', 'yes' );
+		// Autoload yes: the settings are read on every request.
+		update_option( CER_OPTION_KEY, $merged, true );
 	}
 }
 

@@ -73,7 +73,7 @@ function cer_update_option( $key, $value ) {
  * @param WP_REST_Request $request The request.
  * @return WP_REST_Response
  */
-function cer_get_settings( $request ) {
+function cer_get_settings( WP_REST_Request $request ) {
 	$opts = get_option( CER_OPTION_KEY, array() );
 	if ( ! is_array( $opts ) ) {
 		$opts = array();
@@ -88,7 +88,7 @@ function cer_get_settings( $request ) {
  * @param WP_REST_Request $request The request.
  * @return WP_REST_Response|WP_Error
  */
-function cer_update_settings( $request ) {
+function cer_update_settings( WP_REST_Request $request ) {
 	$updates = array();
 	foreach ( CER_OPTION_WHITELIST as $key ) {
 		if ( $request->has_param( $key ) ) {
@@ -121,8 +121,8 @@ function cer_update_settings( $request ) {
  * @param WP_REST_Request $request The request.
  * @return WP_REST_Response|WP_Error
  */
-function cer_create_with_thumbnail( $request ) {
-	$decoded = cer_decode_image_payload( $request->get_param( 'image' ) );
+function cer_create_with_thumbnail( WP_REST_Request $request ) {
+	$decoded = cer_decode_image_payload( (string) $request->get_param( 'image' ) );
 	if ( is_wp_error( $decoded ) ) {
 		return $decoded;
 	}
@@ -130,7 +130,9 @@ function cer_create_with_thumbnail( $request ) {
 	$post_id = wp_insert_post(
 		array(
 			'post_type'    => cer_resolve_comic_slug(),
-			'post_status'  => sanitize_key( $request->get_param( 'post_status' ) ? $request->get_param( 'post_status' ) : 'draft' ),
+			// post_status is already defaulted ('draft') and sanitized by the
+			// route schema, so a plain read is safe here.
+			'post_status'  => (string) $request->get_param( 'post_status' ),
 			'post_title'   => sanitize_post_field( 'post_title', $request->get_param( 'title' ), 0, 'db' ),
 			'post_author'  => get_current_user_id(),
 		),
@@ -158,7 +160,7 @@ function cer_create_with_thumbnail( $request ) {
  * @param WP_REST_Request $request The request.
  * @return WP_REST_Response|WP_Error
  */
-function cer_create_chapter( $request ) {
+function cer_create_chapter( WP_REST_Request $request ) {
 	$args = array();
 	if ( $request->has_param( 'description' ) ) {
 		$args['description'] = sanitize_textarea_field( (string) $request->get_param( 'description' ) );
@@ -194,7 +196,7 @@ function cer_create_chapter( $request ) {
  * @param WP_REST_Request $request The request.
  * @return WP_REST_Response|WP_Error
  */
-function cer_schedule_comic( $request ) {
+function cer_schedule_comic( WP_REST_Request $request ) {
 	$date_gmt_raw = (string) $request->get_param( 'post_date_gmt' );
 	$timestamp    = strtotime( $date_gmt_raw . ' UTC' );
 	if ( ! $timestamp || $timestamp <= time() ) {
@@ -249,7 +251,7 @@ function cer_schedule_comic( $request ) {
  * @param WP_REST_Request $request The request.
  * @return WP_REST_Response|WP_Error
  */
-function cer_bulk_import( $request ) {
+function cer_bulk_import( WP_REST_Request $request ) {
 	if ( ! cer_get_option( 'enable_bulk_import' ) ) {
 		return new WP_Error(
 			'cer_bulk_import_disabled',
