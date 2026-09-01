@@ -84,17 +84,39 @@ jobs:
         with:
           php-version: '8.3'
           coverage: none
-          # Phan 6 requires php-ast >= 1.1.3 (AST version 120). GitHub
-          # runners may ship an older php-ast; pecl upgrade pins the version
-          # we actually need regardless of what's already loaded.
-          extensions: pecl_ast
-      - name: Upgrade php-ast if too old for Phan
+      # Phan 6 requires php-ast >= 1.1.3. setup-php's 'ast' extension input
+      # installs a too-old version on GitHub runners; we build and install
+      # the right version ourselves with sudo so it lands in the system
+      # extension dir, then enable it in php.ini.
+      - name: Install and enable php-ast 1.1.3 for Phan
         run: |
-          set -e
+          set -euo pipefail
           CURRENT="$(php -r 'echo phpversion("ast");' 2>/dev/null || echo none)"
-          if [ "$CURRENT" = "none" ] || dpkg --compare-versions "$CURRENT" lt 1.1.3; then
-            echo "Installed php-ast is '$CURRENT' (need >=1.1.3). Installing via pecl..."
-            yes '' | pecl install ast-1.1.3 || true
+          NEED_INSTALL=0
+          if [ "$CURRENT" = "none" ] || [ "$CURRENT" = "" ]; then
+            NEED_INSTALL=1
+          elif ! dpkg --compare-versions "$CURRENT" ge 1.1.3; then
+            NEED_INSTALL=1
+          fi
+          if [ "$NEED_INSTALL" = "1" ]; then
+            echo "php-ast '$CURRENT' is too old or missing; installing 1.1.3..."
+            # Build into a temp dir, then sudo-copy into the system extension
+            # dir. pecl install's final copy step fails on the runner user.
+            WORKDIR="$(mktemp -d)"
+            cd "$WORKDIR"
+            pecl download ast-1.1.3
+            tar xzf ast-1.1.3.tgz
+            cd ast-1.1.3
+            phpize >/dev/null
+            ./configure --quiet
+            make -j"$(nproc)" >/dev/null
+            EXT_DIR="$(php-config --extension-dir)"
+            sudo cp modules/ast.so "$EXT_DIR/ast.so"
+            INI_DIR="$(php --ini | grep -oP 'in:\s*\K.*' | head -1 | tr -d ' \"')"
+            if [ -z "$INI_DIR" ]; then INI_DIR="/etc/php/8.3/cli/conf.d"; fi
+            echo "extension=ast.so" | sudo tee "$INI_DIR/99-ast.ini" >/dev/null
+            cd "$OLDPWD"
+            rm -rf "$WORKDIR"
           fi
           php -r 'echo "php-ast loaded: ".phpversion("ast")."\n";'
       - name: Install composer deps
