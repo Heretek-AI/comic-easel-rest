@@ -84,8 +84,19 @@ jobs:
         with:
           php-version: '8.3'
           coverage: none
-          # Phan 6 needs the ast extension for full analysis.
-          extensions: ast
+          # Phan 6 requires php-ast >= 1.1.3 (AST version 120). GitHub
+          # runners may ship an older php-ast; pecl upgrade pins the version
+          # we actually need regardless of what's already loaded.
+          extensions: pecl_ast
+      - name: Upgrade php-ast if too old for Phan
+        run: |
+          set -e
+          CURRENT="$(php -r 'echo phpversion("ast");' 2>/dev/null || echo none)"
+          if [ "$CURRENT" = "none" ] || dpkg --compare-versions "$CURRENT" lt 1.1.3; then
+            echo "Installed php-ast is '$CURRENT' (need >=1.1.3). Installing via pecl..."
+            yes '' | pecl install ast-1.1.3 || true
+          fi
+          php -r 'echo "php-ast loaded: ".phpversion("ast")."\n";'
       - name: Install composer deps
         run: composer install --no-interaction --prefer-dist
       - name: Run Phan

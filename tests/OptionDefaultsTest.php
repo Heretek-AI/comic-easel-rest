@@ -31,8 +31,8 @@ class OptionDefaultsTest extends WP_UnitTestCase {
 		$this->assertTrue( $value['enable_cpt_args_shim'] );
 		$this->assertSame( 60, $value['throttle_per_minute'] );
 
-		// Autoload should be 'yes' / 'on' so the option is loaded each request.
-		$this->assertSame( 'on', cer_get_option_autoload( CER_OPTION_KEY ) );
+		// Autoload should be enabled so the option is loaded each request.
+		$this->assertTrue( cer_is_option_autoload_yes( CER_OPTION_KEY ) );
 	}
 
 	public function test_migrates_existing_partial_values_and_sets_autoload_yes() {
@@ -46,7 +46,7 @@ class OptionDefaultsTest extends WP_UnitTestCase {
 		$this->assertSame( 120, $value['throttle_per_minute'] );
 		// Missing defaults filled in.
 		$this->assertTrue( $value['enable_cpt_args_shim'] );
-		$this->assertSame( 'on', cer_get_option_autoload( CER_OPTION_KEY ) );
+		$this->assertTrue( cer_is_option_autoload_yes( CER_OPTION_KEY ) );
 	}
 
 	public function test_equal_values_with_autoload_off_still_flips_autoload() {
@@ -62,33 +62,33 @@ class OptionDefaultsTest extends WP_UnitTestCase {
 		);
 		update_option( CER_OPTION_KEY, $matching, false ); // autoload = no
 
-		$this->assertSame( 'off', cer_get_option_autoload( CER_OPTION_KEY ) );
+		$this->assertFalse( cer_is_option_autoload_yes( CER_OPTION_KEY ) );
 
 		cer_init_option_defaults();
 
 		// Values should be untouched.
 		$this->assertSame( $matching, get_option( CER_OPTION_KEY ) );
-		// But autoload should now be 'yes'.
-		$this->assertSame( 'on', cer_get_option_autoload( CER_OPTION_KEY ) );
+		// But autoload should now be enabled.
+		$this->assertTrue( cer_is_option_autoload_yes( CER_OPTION_KEY ) );
 	}
 }
 
 /**
- * Return the autoload value for an option ('on', 'off', or 'auto').
- * Uses the WP 6.4+ helper when available, falls back to a direct query.
+ * Return whether an option has autoload enabled.
+ *
+ * The wp_options.autoload column stores the value in two flavours depending
+ * on WP version: pre-6.7 it is 'yes' / 'no'; from 6.7 onward it is 'on' /
+ * 'off' (with 'auto' as a third value). Normalise both to a boolean.
  */
-function cer_get_option_autoload( $option ) {
+function cer_is_option_autoload_yes( $option ) {
 	global $wpdb;
+	// WP 6.6+ exposes wp_get_option_autoload(), which returns the value in
+	// the new normalised form ('on' / 'off' / 'auto') regardless of what is
+	// stored in the column. 'auto' means "autoload but skip if not used",
+	// which is still good enough for our migration's purpose.
 	if ( function_exists( 'wp_get_option_autoload' ) ) {
-		// The WP helper is loosely typed; normalise to a known set.
 		$value = wp_get_option_autoload( $option );
-		if ( true === $value ) {
-			return 'on';
-		}
-		if ( false === $value ) {
-			return 'off';
-		}
-		return (string) $value;
+		return 'on' === $value || 'auto' === $value;
 	}
 	// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 	$row = $wpdb->get_row(
@@ -97,5 +97,10 @@ function cer_get_option_autoload( $option ) {
 			$option
 		)
 	);
-	return $row ? (string) $row->autoload : '';
+	if ( ! $row ) {
+		return false;
+	}
+	// Pre-6.7 stored 'yes' / 'no'. The bug we're fixing predates the
+	// normalisation, so we have to handle both spellings.
+	return in_array( $row->autoload, array( 'yes', 'on' ), true );
 }

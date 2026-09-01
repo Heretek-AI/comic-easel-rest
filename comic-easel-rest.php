@@ -130,7 +130,11 @@ function cer_ensure_option_autoload( $option, $autoload = true ) {
 		return;
 	}
 	global $wpdb;
-	$value = $autoload ? 'on' : 'off';
+	// WP 5.6-6.3 stored 'yes' / 'no' in the autoload column. WP 6.7+
+	// normalises to 'on' / 'off', but wp_set_option_autoload (above) is
+	// available from WP 6.4 so this fallback only runs on the legacy
+	// spellings.
+	$value = $autoload ? 'yes' : 'no';
 	// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 	$wpdb->query(
 		$wpdb->prepare(
