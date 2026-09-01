@@ -82,7 +82,11 @@ jobs:
           persist-credentials: false
       - uses: shivammathur/setup-php@4aba0efa1f27403dcb5ed35107703c97aed2d540 # v2
         with:
-          php-version: '8.3'
+          # Psalm 6 requires PHP >= 8.3.16; setup-php on the runner resolves
+          # '8.3' to the oldest patch (8.3.6) and Psalm then refuses to run.
+          # 8.4 satisfies both Psalm and Phan (>= 8.1) and matches the
+          # highest minor the test matrix exercises.
+          php-version: '8.4'
           coverage: none
       # Phan 6 requires php-ast >= 1.1.3. setup-php's 'ast' extension input
       # installs a too-old version on GitHub runners; we build and install
@@ -113,7 +117,7 @@ jobs:
             EXT_DIR="$(php-config --extension-dir)"
             sudo cp modules/ast.so "$EXT_DIR/ast.so"
             INI_DIR="$(php --ini | grep -oP 'in:\s*\K.*' | head -1 | tr -d ' \"')"
-            if [ -z "$INI_DIR" ]; then INI_DIR="/etc/php/8.3/cli/conf.d"; fi
+            if [ -z "$INI_DIR" ]; then INI_DIR="/etc/php/8.4/cli/conf.d"; fi
             echo "extension=ast.so" | sudo tee "$INI_DIR/99-ast.ini" >/dev/null
             cd "$OLDPWD"
             rm -rf "$WORKDIR"
