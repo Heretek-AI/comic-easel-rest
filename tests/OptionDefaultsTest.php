@@ -79,6 +79,11 @@ class OptionDefaultsTest extends WP_UnitTestCase {
  * The wp_options.autoload column stores the value in two flavours depending
  * on WP version: pre-6.7 it is 'yes' / 'no'; from 6.7 onward it is 'on' /
  * 'off' (with 'auto' as a third value). Normalise both to a boolean.
+ *
+ * The wp_get_option_autoload() branch is currently dead code: WordPress
+ * core does not yet ship that getter, so the function_exists() guard is
+ * always false at runtime. It is kept so the helper automatically takes
+ * the fast path once WP adds the function (no further changes needed).
  */
 function cer_is_option_autoload_yes( $option ) { // NOSONAR: cer_* snake_case is the project naming convention.
     global $wpdb;
@@ -87,7 +92,7 @@ function cer_is_option_autoload_yes( $option ) { // NOSONAR: cer_* snake_case is
     // stored in the column. 'auto' means "autoload but skip if not used",
     // which is still good enough for our migration's purpose.
     if ( function_exists( 'wp_get_option_autoload' ) ) {
-        $value = wp_get_option_autoload( $option );
+        $value = wp_get_option_autoload( $option ); // @phan-suppress-current-line PhanUndeclaredFunction -- guarded by function_exists; will activate when WP adds the getter.
         return 'on' === $value || 'auto' === $value;
     }
     // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching

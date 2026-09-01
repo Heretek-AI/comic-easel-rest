@@ -121,6 +121,11 @@ function cer_init_option_defaults() {
  * to a direct $wpdb update for 5.6–6.3 so the plugin still ships the
  * autoload fix to older installs.
  *
+ * Caller should already know the autoload differs from the desired value;
+ * this function performs the write unconditionally and invalidates the
+ * Options API alloptions object cache so persistent object caches see
+ * the change on the next request.
+ *
  * @param string $option   Option name.
  * @param bool   $autoload Desired autoload state.
  */
@@ -143,6 +148,11 @@ function cer_ensure_option_autoload( $option, $autoload = true ) { // NOSONAR: c
 			$option
 		)
 	);
+	// Invalidate the Options API alloptions cache so persistent object
+	// caches don't keep serving the old autoload value on the next
+	// request. update_option() handles this internally; our $wpdb path
+	// bypasses that helper.
+	wp_cache_delete( 'alloptions', 'options' );
 }
 
 /**
