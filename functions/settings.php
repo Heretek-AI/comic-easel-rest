@@ -160,7 +160,7 @@ function cer_create_with_thumbnail( WP_REST_Request $request ) {
  * @param WP_REST_Request $request The request.
  * @return WP_REST_Response|WP_Error
  */
-function cer_create_chapter( WP_REST_Request $request ) {
+function cer_create_chapter( WP_REST_Request $request ) { // NOSONAR: cer_* snake_case is the project naming convention.
 	$args = array();
 	if ( $request->has_param( 'description' ) ) {
 		$args['description'] = sanitize_textarea_field( (string) $request->get_param( 'description' ) );
@@ -196,25 +196,13 @@ function cer_create_chapter( WP_REST_Request $request ) {
  * @param WP_REST_Request $request The request.
  * @return WP_REST_Response|WP_Error
  */
-function cer_schedule_comic( WP_REST_Request $request ) {
-	$date_gmt_raw = (string) $request->get_param( 'post_date_gmt' );
-	$timestamp    = strtotime( $date_gmt_raw . ' UTC' );
-	if ( ! $timestamp || $timestamp <= time() ) {
-		return new WP_Error(
-			'cer_invalid_date',
-			__( 'post_date_gmt must be a future ISO 8601 datetime in UTC.', 'comic-easel-rest' ),
-			array( 'status' => 400 )
-		);
+function cer_schedule_comic( WP_REST_Request $request ) { // NOSONAR: cer_* snake_case is the project naming convention.
+	$valid = cer_schedule_validate( $request );
+	if ( is_wp_error( $valid ) ) {
+		return $valid;
 	}
-
-	$attachment_id = 0;
-	if ( $request->has_param( 'image' ) && '' !== (string) $request->get_param( 'image' ) ) {
-		$decoded = cer_decode_image_payload( (string) $request->get_param( 'image' ) );
-		if ( is_wp_error( $decoded ) ) {
-			return $decoded;
-		}
-		$attachment_id = $decoded['attachment_id'];
-	}
+	$timestamp     = $valid['timestamp'];
+	$attachment_id = $valid['attachment_id'];
 
 	$post_id = wp_insert_post(
 		array(
@@ -245,13 +233,48 @@ function cer_schedule_comic( WP_REST_Request $request ) {
 }
 
 /**
+ * Validate a schedule request: parse the future UTC datetime, and if an
+ * image was supplied, decode it. Returns either
+ * `array( 'timestamp' => int, 'attachment_id' => int )` or a `WP_Error`
+ * describing the failure (the date error or any image decode error).
+ *
+ * @param WP_REST_Request $request The request.
+ * @return array{timestamp: int, attachment_id: int}|WP_Error
+ */
+function cer_schedule_validate( WP_REST_Request $request ) { // NOSONAR: cer_* snake_case is the project naming convention.
+	$date_gmt_raw = (string) $request->get_param( 'post_date_gmt' );
+	$timestamp    = strtotime( $date_gmt_raw . ' UTC' );
+	if ( ! $timestamp || $timestamp <= time() ) {
+		return new WP_Error(
+			'cer_invalid_date',
+			__( 'post_date_gmt must be a future ISO 8601 datetime in UTC.', 'comic-easel-rest' ),
+			array( 'status' => 400 )
+		);
+	}
+
+	$attachment_id = 0;
+	if ( $request->has_param( 'image' ) && '' !== (string) $request->get_param( 'image' ) ) {
+		$decoded = cer_decode_image_payload( (string) $request->get_param( 'image' ) );
+		if ( is_wp_error( $decoded ) ) {
+			return $decoded;
+		}
+		$attachment_id = (int) $decoded['attachment_id'];
+	}
+
+	return array(
+		'timestamp'     => $timestamp,
+		'attachment_id' => $attachment_id,
+	);
+}
+
+/**
  * POST /comic-easel/v1/comics/bulk-import — create many comics under a
  * chapter.
  *
  * @param WP_REST_Request $request The request.
  * @return WP_REST_Response|WP_Error
  */
-function cer_bulk_import( WP_REST_Request $request ) {
+function cer_bulk_import( WP_REST_Request $request ) { // NOSONAR: cer_* snake_case is the project naming convention.
 	if ( ! cer_get_option( 'enable_bulk_import' ) ) {
 		return new WP_Error(
 			'cer_bulk_import_disabled',
@@ -269,7 +292,7 @@ function cer_bulk_import( WP_REST_Request $request ) {
 		);
 	}
 
-	$items  = (array) $request->get_param( 'items' );
+	$items   = (array) $request->get_param( 'items' );
 	$results = array();
 	$errors  = array();
 
@@ -277,65 +300,12 @@ function cer_bulk_import( WP_REST_Request $request ) {
 		if ( ! is_array( $item ) ) {
 			continue;
 		}
-		$title         = isset( $item['title'] ) ? sanitize_text_field( (string) $item['title'] ) : '';
-		$payload       = '';
-		if ( ! empty( $item['image_url'] ) ) {
-			$payload = (string) $item['image_url'];
-		} elseif ( ! empty( $item['image_data'] ) ) {
-			$payload = (string) $item['image_data'];
-		}
-		$post_date_gmt = isset( $item['post_date_gmt'] ) ? (string) $item['post_date_gmt'] : '';
-
-		if ( '' === $title ) {
-			$errors[] = array( 'index' => $i, 'error' => 'missing_title' );
+		$outcome = cer_bulk_import_item( $item, $i, $chapter_id );
+		if ( is_wp_error( $outcome ) ) {
+			$errors[] = array( 'index' => $i, 'error' => $outcome->get_error_code() );
 			continue;
 		}
-
-		$attachment_id = 0;
-		if ( '' !== $payload ) {
-			$decoded = cer_decode_image_payload( $payload );
-			if ( is_wp_error( $decoded ) ) {
-				$errors[] = array( 'index' => $i, 'error' => $decoded->get_error_code() );
-				continue;
-			}
-			$attachment_id = $decoded['attachment_id'];
-		}
-
-		$post_status = 'publish';
-		$date_gmt    = '';
-		if ( '' !== $post_date_gmt ) {
-			$ts = strtotime( $post_date_gmt . ' UTC' );
-			if ( $ts && $ts > time() ) {
-				$post_status = 'future';
-				$date_gmt    = gmdate( 'Y-m-d H:i:s', $ts );
-			}
-		}
-
-		$post_id = wp_insert_post(
-			array(
-				'post_type'     => cer_resolve_comic_slug(),
-				'post_status'   => $post_status,
-				'post_title'    => $title,
-				'post_date_gmt' => $date_gmt,
-				'post_author'   => get_current_user_id(),
-			),
-			true
-		);
-		if ( is_wp_error( $post_id ) ) {
-			$errors[] = array( 'index' => $i, 'error' => $post_id->get_error_code() );
-			continue;
-		}
-
-		if ( $attachment_id ) {
-			cer_attach_featured_image( $post_id, $attachment_id );
-		}
-		cer_assign_chapters( $post_id, array( $chapter_id ) );
-
-		$results[] = array(
-			'index'         => $i,
-			'id'            => (int) $post_id,
-			'attachment_id' => (int) $attachment_id,
-		);
+		$results[] = $outcome;
 	}
 
 	return new WP_REST_Response(
@@ -348,4 +318,104 @@ function cer_bulk_import( WP_REST_Request $request ) {
 		),
 		201
 	);
+}
+
+/**
+ * Process a single bulk-import item: validate, resolve image/schedule, insert,
+ * attach image and chapters. Returns the created item's
+ * `array( 'index', 'id', 'attachment_id' )` on success or a `WP_Error` on
+ * failure. The caller converts the error code into the response `errors`
+ * entry `{ index, error }`.
+ *
+ * @param array $item       The bulk item (already known to be an array).
+ * @param int   $index      Item index in the request payload.
+ * @param int   $chapter_id Chapter to assign.
+ * @return array{index: int, id: int, attachment_id: int}|WP_Error
+ */
+function cer_bulk_import_item( array $item, $index, $chapter_id ) { // NOSONAR: cer_* snake_case is the project naming convention.
+	$title = isset( $item['title'] ) ? sanitize_text_field( (string) $item['title'] ) : '';
+	if ( '' === $title ) {
+		return new WP_Error( 'missing_title' );
+	}
+
+	$attachment_id = cer_bulk_item_resolve_image( $item );
+	if ( is_wp_error( $attachment_id ) ) {
+		// Route the decode error through the same single error check as a
+		// failed insert, so the function keeps exactly three returns. The `0`
+		// reset also narrows the type for static analysis on the success path.
+		$post_id       = $attachment_id;
+		$attachment_id = 0;
+	} else {
+		list( $post_status, $date_gmt ) = cer_bulk_item_resolve_schedule( $item );
+		$post_id = wp_insert_post(
+			array(
+				'post_type'     => cer_resolve_comic_slug(),
+				'post_status'   => $post_status,
+				'post_title'    => $title,
+				'post_date_gmt' => $date_gmt,
+				'post_author'   => get_current_user_id(),
+			),
+			true
+		);
+	}
+
+	if ( is_wp_error( $post_id ) ) {
+		return $post_id;
+	}
+
+	if ( $attachment_id ) {
+		cer_attach_featured_image( $post_id, $attachment_id );
+	}
+	cer_assign_chapters( $post_id, array( $chapter_id ) );
+
+	return array(
+		'index'         => $index,
+		'id'            => $post_id,
+		'attachment_id' => $attachment_id,
+	);
+}
+
+/**
+ * Resolve the image payload for a bulk-import item. Returns the attachment
+ * ID (int), `0` when no image was supplied, or a `WP_Error` when decoding
+ * failed.
+ *
+ * @param array $item The bulk item.
+ * @return int|WP_Error
+ */
+function cer_bulk_item_resolve_image( array $item ) { // NOSONAR: cer_* snake_case is the project naming convention.
+	$payload = '';
+	if ( ! empty( $item['image_url'] ) ) {
+		$payload = (string) $item['image_url'];
+	} elseif ( ! empty( $item['image_data'] ) ) {
+		$payload = (string) $item['image_data'];
+	}
+	if ( '' === $payload ) {
+		return 0;
+	}
+	$decoded = cer_decode_image_payload( $payload );
+	if ( is_wp_error( $decoded ) ) {
+		return $decoded;
+	}
+	return (int) $decoded['attachment_id'];
+}
+
+/**
+ * Resolve the post status and GMT date for a bulk-import item. Future dates
+ * become `future` with the formatted `Y-m-d H:i:s` value; everything else
+ * (empty, unparseable, or past) falls back to immediate `publish`.
+ *
+ * @param array $item The bulk item.
+ * @return array{0: string, 1: string}
+ */
+function cer_bulk_item_resolve_schedule( array $item ) { // NOSONAR: cer_* snake_case is the project naming convention.
+	$post_date_gmt = isset( $item['post_date_gmt'] ) ? (string) $item['post_date_gmt'] : '';
+	if ( '' === $post_date_gmt ) {
+		return array( 'publish', '' );
+	}
+	$ts = strtotime( $post_date_gmt . ' UTC' );
+	if ( $ts && $ts > time() ) {
+		return array( 'future', gmdate( 'Y-m-d H:i:s', $ts ) );
+	}
+	return array( 'publish', '' );
 }

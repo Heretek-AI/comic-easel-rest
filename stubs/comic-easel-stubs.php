@@ -16,6 +16,6 @@
  * @param string $key Optional configuration key.
  * @return mixed
  */
-function ceo_pluginfo( $key = '' ) {
-	return '';
+function ceo_pluginfo( $key = '' ) { // NOSONAR: stub mirrors the parent comic-easel plugin's public signature; name and parameter must match for Phan/Psalm.
+    return '';
 }
