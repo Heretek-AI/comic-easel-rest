@@ -1,0 +1,9 @@
+.DS_Store
+/vendor/
+/.phpunit.cache/
+/.phpcs-cache
+**/__pycache__/
+*.pyc
+phpunit.xml
+phpcs.xml
+composer.lock

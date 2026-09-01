@@ -1,0 +1,97 @@
+name: CI
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  # Syntax check across every PHP version we claim to support. This is the
+  # cheapest useful signal in the repo: it catches parse errors and obvious
+  # typos before we spend time on a fuller test run.
+  lint-php:
+    name: php -l (PHP ${{ matrix.php }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: [ '7.4', '8.0', '8.1', '8.2', '8.3', '8.4' ]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+      - name: Lint every PHP file
+        run: |
+          find . -name '*.php' -not -path './vendor/*' -print0 \
+            | xargs -0 -n1 -P4 php -l
+
+  test:
+    name: PHPUnit (PHP ${{ matrix.php }}, WP ${{ matrix.wp }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: [ '7.4', '8.0', '8.1', '8.2', '8.3', '8.4' ]
+        wp: [ '6.4', 'latest' ]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+          extensions: sqlite3, mysqli
+      - name: Install subversion (for WP core + test suite)
+        run: sudo apt-get install -y subversion
+      - name: Install WP test suite + parent plugin + companion plugin
+        env:
+          WP_VERSION: ${{ matrix.wp }}
+        run: bash bin/install-wp-tests.sh
+      - name: Install composer deps
+        run: composer update --no-interaction --prefer-dist
+      - name: Run tests
+        run: composer test
+
+  # Scoped to the LINES a pull request actually adds, not merely the files
+  # it touches. Same rationale as comic-easel: the sniffs cannot see through
+  # apply_filters() to an escaper inside it, and a job that is red by default
+  # is a job everyone learns to scroll past. Advisory, not a gate.
+  phpcs:
+    name: PHPCS (advisory, changed lines)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+      - name: Install composer deps
+        run: composer update --no-interaction --prefer-dist
+      - name: Report PHPCS findings on added lines
+        run: |
+          BASE="${{ github.event.pull_request.base.sha }}"
+          if [ -n "$BASE" ]; then
+            BASE="$(git merge-base "$BASE" HEAD)"
+          else
+            BASE="$(git rev-parse HEAD~1 2>/dev/null || true)"
+          fi
+          if [ -z "$BASE" ]; then
+            echo "No base commit to compare against; skipping."
+            exit 0
+          fi
+          echo "Comparing against $BASE"
+          git diff --unified=0 "$BASE" HEAD -- '*.php' > /tmp/pr.diff
+          FILES="$(git diff --name-only --diff-filter=ACMR "$BASE" HEAD -- '*.php' | grep -v '^vendor/' || true)"
+          if [ -z "$FILES" ]; then
+            echo "No PHP files changed; nothing to check."
+            exit 0
+          fi
+          echo "$FILES" | tr '\n' ' '; echo
+          echo "$FILES" | xargs ./vendor/bin/phpcs -q --report=json > /tmp/phpcs.json || true
+          python3 .github/scripts/phpcs-added-lines.py /tmp/phpcs.json /tmp/pr.diff
