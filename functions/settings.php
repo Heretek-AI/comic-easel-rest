@@ -2,7 +2,7 @@
 /**
  * Settings and endpoint callbacks for Comic Easel REST.
  *
- * Owns the option whitelist and the five REST endpoint implementations.
+ * Owns the option whitelist and the six REST endpoint implementations.
  * Functions here are called from includes/class-rest-controller.php.
  *
  * @package ComicEaselREST

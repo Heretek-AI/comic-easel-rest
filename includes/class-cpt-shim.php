@@ -10,11 +10,11 @@
  * @package ComicEaselREST
  */
 
+namespace ComicEaselRest;
+
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
-
-namespace ComicEaselRest;
 
 class CPT_Shim {
 

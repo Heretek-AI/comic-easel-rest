@@ -8,7 +8,12 @@
 /**
  * @group rest
  */
-class Tests_REST_Controller extends WP_Test_REST_TestCase {
+class REST_ControllerTest extends WP_Test_REST_TestCase {
+
+	/**
+	 * @var int Administrator user ID (manage_options).
+	 */
+	protected static $admin_id;
 
 	/**
 	 * @var int Author user ID.
@@ -26,6 +31,7 @@ class Tests_REST_Controller extends WP_Test_REST_TestCase {
 	protected static $subscriber_id;
 
 	public static function wpSetUpBeforeClass( WP_UnitTest_Factory $factory ) {
+		self::$admin_id      = $factory->user->create( array( 'role' => 'administrator' ) );
 		self::$author_id     = $factory->user->create( array( 'role' => 'author' ) );
 		self::$editor_id     = $factory->user->create( array( 'role' => 'editor' ) );
 		self::$subscriber_id = $factory->user->create( array( 'role' => 'subscriber' ) );
@@ -70,18 +76,17 @@ class Tests_REST_Controller extends WP_Test_REST_TestCase {
 	}
 
 	public function test_settings_post_rejects_unknown_keys() {
-		wp_set_current_user( self::$editor_id );
+		wp_set_current_user( self::$admin_id );
 
 		$request = new WP_REST_Request( 'POST', '/comic-easel/v1/settings' );
 		$request->set_body_params( array( 'not_a_real_setting' => 'value' ) );
 		$response = rest_do_request( $request );
 
-		$this->assertWPError( $response );
-		$this->assertSame( 'cer_no_settings', $response->get_error_code() );
+		$this->assertErrorResponse( 'cer_no_settings', $response, 400 );
 	}
 
 	public function test_settings_post_updates_whitelisted_keys() {
-		wp_set_current_user( self::$editor_id );
+		wp_set_current_user( self::$admin_id );
 
 		$request = new WP_REST_Request( 'POST', '/comic-easel/v1/settings' );
 		$request->set_body_params( array( 'throttle_per_minute' => 120 ) );
@@ -141,8 +146,7 @@ class Tests_REST_Controller extends WP_Test_REST_TestCase {
 		) );
 		$response = rest_do_request( $request );
 
-		$this->assertWPError( $response );
-		$this->assertSame( 'cer_invalid_date', $response->get_error_code() );
+		$this->assertErrorResponse( 'cer_invalid_date', $response, 400 );
 	}
 
 	// ── Bulk-import endpoint ─────────────────────────────────────────────
@@ -162,8 +166,7 @@ class Tests_REST_Controller extends WP_Test_REST_TestCase {
 		) );
 		$response = rest_do_request( $request );
 
-		$this->assertWPError( $response );
-		$this->assertSame( 'cer_invalid_chapter', $response->get_error_code() );
+		$this->assertErrorResponse( 'cer_invalid_chapter', $response, 400 );
 	}
 
 	// ── With-thumbnail endpoint ──────────────────────────────────────────
@@ -177,10 +180,11 @@ class Tests_REST_Controller extends WP_Test_REST_TestCase {
 		wp_set_current_user( self::$editor_id );
 
 		$request = new WP_REST_Request( 'POST', '/comic-easel/v1/comics/with-thumbnail' );
-		$request->set_body_params( array( 'title' => 'No Image Here' ) );
+		// image is a required arg; an empty string passes schema validation and
+		// reaches the callback's own cer_no_image guard.
+		$request->set_body_params( array( 'title' => 'No Image Here', 'image' => '' ) );
 		$response = rest_do_request( $request );
 
-		$this->assertWPError( $response );
-		$this->assertSame( 'cer_no_image', $response->get_error_code() );
+		$this->assertErrorResponse( 'cer_no_image', $response, 400 );
 	}
 }

@@ -10,7 +10,7 @@ use ComicEaselRest\CPT_Shim;
 /**
  * @group shim
  */
-class Tests_CPT_Shim extends WP_UnitTestCase {
+class CPT_ShimTest extends WP_UnitTestCase {
 
 	public function set_up() {
 		parent::set_up();
