@@ -1,286 +1,183 @@
-# API Surface — twitter-to-comic skill
-
-This document lists every HTTP call the skill makes. The agent should follow
-each section verbatim: method, URL template, headers, request body shape, and
-response shape. All WP calls use Application Password auth. All X calls use
-bearer-token auth.
-
-## Auth
-
-### WordPress (Basic auth)
-
-```
-Authorization: Basic base64(WP_USER:WP_APP_PASSWORD)
-```
-
-`curl` shorthand:
-
-```bash
-curl -sS -u "$WP_USER:$WP_APP_PASSWORD" ...
-```
-
-The credential user must have `edit_posts` and `upload_files` capabilities.
-
-### X (Bearer token)
-
-```
-Authorization: Bearer $X_BEARER_TOKEN
-```
+Assuming you need the reference specification file (`api-surface.md`) for the `twitter-to-comic` Claude skill targeting the `comic-easel-rest` repository, the complete API contract and schema specification are structured below.
 
 ---
 
-## WordPress endpoints
+# Comic Easel REST API Surface
 
-### Resolve WP user
+This document defines the REST API endpoints, schemas, authentication requirements, and data mapping protocols used by the `twitter-to-comic` skill to ingest Twitter/X media and publish it as serialized comic posts in WordPress via Comic Easel.
 
-```
-GET $WP_BASE_URL/wp-json/wp/v2/users?search=$WORDPRESS_USERNAME&per_page=1
-Headers:
-  Authorization: Basic ...
-```
+## Authentication & Headers
 
-Response (`200`):
+Requests require authentication via WordPress Application Passwords or standard Bearer JWT tokens.
 
+* **Authorization Header**: `Authorization: Basic <base64(username:application_password)>` or `Authorization: Bearer <jwt_token>`
+* **Content-Type**: `application/json` (except media binary uploads: `image/png`, `image/jpeg`, `image/webp`)
+* **Base Path**: `https://<site-domain>/wp-json`
+
+---
+
+## Core Endpoints
+
+### 1. Deduplication Check
+
+Verify whether a tweet has already been ingested before processing media or creating records.
+
+* **Method**: `GET`
+* **Route**: `/wp-json/wp/v2/comic`
+* **Query Parameters**:
+* `meta_key=twitter_source_id`
+* `meta_value=<tweet_id>`
+* `_fields=id,link,slug,status`
+
+
+* **Response `200 OK**`:
 ```json
 [
   {
-    "id": 42,
-    "name": "Artist Display Name",
-    "slug": "artist-handle",
-    "description": "..."
+    "id": 1042,
+    "link": "https://example.com/comic/episode-42",
+    "slug": "episode-42",
+    "status": "publish"
   }
 ]
-```
-
-Take `id` from the first item.
-
-Errors:
-- `[]` → user not found; stop.
-- `403` → Application Password wrong or user lacks `edit_posts`.
-
-### Upload image
 
 ```
-POST $WP_BASE_URL/wp-json/wp/v2/media
-Headers:
-  Authorization: Basic ...
-  Content-Type: <mime>                # image/jpeg | image/png | image/gif | image/webp
-  Content-Disposition: attachment; filename="<filename>"
-Body:
-  <raw image bytes, --data-binary @/path/to/file>
-```
 
-Response (`201`):
 
-```json
-{
-  "id": 678,
-  "source_url": "https://shad-base.com/wp-content/uploads/2026/08/HQ86pw_WQAA9a-w.jpg",
-  "media_details": { ... },
-  "mime_type": "image/jpeg",
-  ...
-}
-```
-
-Capture `id` and `source_url`.
-
-Errors:
-- `400` → invalid file (not an image, or zero bytes).
-- `403` → Application Password lacks `upload_files`.
-
-### Create draft comic
-
-```
-POST $WP_BASE_URL/wp-json/wp/v2/comic
-Headers:
-  Authorization: Basic ...
-  Content-Type: application/json
-Body:
-  {
-    "title":          "Comic by Example Artist - Aug 12, 2026",
-    "status":         "draft",
-    "date":           "2026-08-12T18:34:02Z",   // ISO 8601, tweet's created_at
-    "author":         42,                         // WP user id from Resolve WP user
-    "featured_media": 678                         // attachment id of the FIRST uploaded image
-  }
-```
-
-> **Do not** pass `meta` here. `source_tweet_id`, `source_url`, and
-> `ceo_html_below_comic` are intentionally NOT exposed via the standard
-> `wp/v2/comic` `meta` field (see `comic-easel-rest.php`
-> `cer_register_comic_meta_for_rest` docblock). Writing them via `meta`
-> would silently drop them and trip the WP 6.9 / 7.x block-editor iframe
-> regression that the plugin deliberately avoids.
-
-Response (`201`):
-
-```json
-{
-  "id": 1234,
-  "status": "draft",
-  "title": { "rendered": "Comic by ..." },
-  "featured_media": 678,
-  "meta": [], //   // intentionally empty — fields below are written via the next endpoint
-  ...
-}
-```
-
-Capture `id` as `$COMIC_ID`.
-
-Errors:
-- `400` with `rest_invalid_param` on `author` / `featured_media` / `date` —
-  check the param value (numeric, ISO 8601, etc).
-- `403` → user lacks the required capability.
-
-### Write meta (plugin endpoint)
-
-```
-POST $WP_BASE_URL/wp-json/comic-easel/v1/comics/$COMIC_ID/meta
-Headers:
-  Authorization: Basic ...
-  Content-Type: application/json
-Body:
-  {
-    "source_tweet_id":      "1234567890123456789",
-    "source_url":            "https://x.com/handle/status/1234567890123456789",
-    "ceo_html_below_comic":  "<img src=\"...\" alt=\"...\" class=\"alignnone\" />\n<img src=\"...\" ... />"
-  }
-```
-
-All three keys are optional, but supply at least one. The endpoint writes
-each supplied key via `update_post_meta`, which works regardless of whether
-`show_in_rest` is on (it isn't, by design).
-
-Response (`200`):
-
-```json
-{
-  "id": 1234,
-  "updated": ["source_tweet_id", "source_url", "ceo_html_below_comic"]
-}
-```
-
-Errors:
-- `404 cer_invalid_comic` → comic doesn't exist or isn't the right CPT.
-- `400 cer_no_meta` → no recognised keys supplied.
-- `403` → user lacks `edit_posts` or `upload_files`.
-
-### Search for an existing comic (idempotency, approximate)
-
-```
-GET $WP_BASE_URL/wp-json/wp/v2/comic?search=$SOURCE_URL&per_page=1
-Headers:
-  Authorization: Basic ...
-```
-
-WP's default search checks title, excerpt, and content. The tweet's
-`source_url` is unlikely to be in any of those for an untouched draft, but
-this is the closest we can get without exposing `source_url` as a REST meta
-field. If the response has items, the comic already exists — surface its id
-and skip the create steps.
 
 ---
 
-## X API v2 endpoints
+### 2. Media Upload
 
-### Resolve user id
+Upload raw comic strip images downloaded from the tweet payload before generating the comic post.
 
-```
-GET https://api.twitter.com/2/users/by/username/$HANDLE
-Headers:
-  Authorization: Bearer $X_BEARER_TOKEN
-```
+* **Method**: `POST`
+* **Route**: `/wp-json/wp/v2/media`
+* **Headers**:
+* `Content-Type`: `image/png` (or image MIME type)
+* `Content-Disposition`: `attachment; filename="comic_<tweet_id>_<index>.png"`
 
-Response (`200`):
 
+* **Body**: Binary image payload
+* **Response `201 Created**`:
 ```json
 {
-  "data": {
-    "id": "12345",
-    "name": "Display Name",
-    "username": "ExampleArtist"
+  "id": 4821,
+  "source_url": "https://example.com/wp-content/uploads/2026/09/comic_182937492_0.png",
+  "media_details": {
+    "width": 1200,
+    "height": 1800
   }
 }
-```
-
-Capture `data.id`. Errors:
-- `404` or empty `data` → handle not found; stop.
-
-### Fetch tweets (paginated)
 
 ```
-GET https://api.twitter.com/2/users/$X_USER_ID/tweets?max_results=100&tweet.fields=created_at,attachments&expansions=attachments.media_keys&media.fields=media_key,type,url,preview_image_url&pagination_token=$NEXT_TOKEN
-Headers:
-  Authorization: Bearer $X_BEARER_TOKEN
-```
 
-Per-page response (`200`):
 
+
+---
+
+### 3. Comic Post Creation
+
+Create the primary Comic Easel custom post type (`comic`).
+
+* **Method**: `POST`
+* **Route**: `/wp-json/comic-easel/v1/comics` (fallback: `/wp-json/wp/v2/comic`)
+* **Headers**: `Content-Type: application/json`
+* **Payload Schema**:
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `title` | `string` | Yes | Comic post title (derived from tweet or series convention). |
+| `content` | `string` | No | HTML or Markdown body/transcript. |
+| `status` | `string` | Yes | Target post status: `"publish"`, `"draft"`, or `"future"`. |
+| `date` | `string` | No | ISO 8601 UTC timestamp of the original tweet. |
+| `featured_media` | `integer` | Yes | WordPress media ID returned from the media upload endpoint. |
+| `chapters` | `integer[]` | No | Array of taxonomy term IDs for the storyline/chapter. |
+| `characters` | `integer[]` | No | Array of taxonomy term IDs for tagged characters. |
+| `comic-tag` | `integer[]` | No | Array of taxonomy term IDs for tags. |
+| `meta` | `object` | Yes | Comic Easel custom metadata fields. |
+
+* **Request Example**:
 ```json
 {
-  "data": [
-    {
-      "id": "1234567890123456789",
-      "text": "tweet text",
-      "created_at": "2026-08-12T18:34:02.000Z",
-      "attachments": {
-        "media_keys": ["3_1234567890123456789", "3_9876543210987654321"]
-      }
-    }
-  ],
-  "includes": {
-    "media": [
-      {
-        "media_key": "3_1234567890123456789",
-        "type": "photo",
-        "url": "https://pbs.twimg.com/media/....jpg"
-      },
-      {
-        "media_key": "3_9876543210987654321",
-        "type": "video",
-        "preview_image_url": "https://pbs.twimg.com/ext_tw_video_thumb/....jpg"
-      }
-    ]
-  },
+  "title": "Strip #48: Morning Coffee",
+  "status": "publish",
+  "date": "2026-09-01T14:32:00Z",
+  "featured_media": 4821,
+  "chapters": [12],
+  "characters": [4, 9],
   "meta": {
-    "next_token": "abcdef...",
-    "result_count": 10,
-    "newest_id": "...",
-    "oldest_id": "..."
+    "comic_hovertext": "Alt-text extracted from tweet or custom prompt punchline.",
+    "comic_transcript": "Panel 1: Character drinks coffee. Panel 2: Realization hits.",
+    "twitter_source_id": "18301928471928374",
+    "twitter_author": "artist_handle",
+    "twitter_source_url": "https://x.com/artist_handle/status/18301928471928374"
   }
 }
+
 ```
 
-### Walk algorithm
 
-1. Start with no `pagination_token`.
-2. Accumulate every `includes.media[]` entry into `media_by_key` keyed by
-   `media_key`. (The `includes.media` array is per-page only — pages don't
-   carry over.)
-3. For each tweet in `data[]`:
-   - If `id === $TWEET_ID`, set `found_target = true`.
-   - Take `attachments.media_keys`, look each up in `media_by_key`. **Keep
-     only entries where `type === "photo"` AND `url` is non-empty.**
-     Drop `video` and `animated_gif` (they have only `preview_image_url`).
-4. If `found_target`, stop paginating. Emit any photo-bearing tweets found
-   in the current page (and any earlier pages already accumulated).
-5. Otherwise, if `meta.next_token` exists, set
-   `pagination_token=<next_token>` and loop. Hard cap at **10 pages**.
-6. If `found_target` was never set after 10 pages, stop and ask the user —
-   the tweet is older than the most recent ~1000.
+* **Response `201 Created**`:
+```json
+{
+  "id": 1043,
+  "slug": "strip-48-morning-coffee",
+  "status": "publish",
+  "link": "https://example.com/comic/strip-48-morning-coffee",
+  "featured_media": 4821,
+  "chapters": [12],
+  "meta": {
+    "comic_hovertext": "Alt-text extracted from tweet or custom punchline.",
+    "twitter_source_id": "18301928471928374"
+  }
+}
+
+```
+
+
 
 ---
 
-## Response shape cheatsheet
+### 4. Taxonomy & Chapter Management
 
-| What you need | Where to get it |
-| --- | --- |
-| WP user id | `GET /wp/v2/users` → `[0].id` |
-| Attachment id | `POST /wp/v2/media` → `.id` |
-| Attachment URL | `POST /wp/v2/media` → `.source_url` |
-| Comic id | `POST /wp/v2/comic` → `.id` |
-| X user id | `GET /2/users/by/username/{handle}` → `.data.id` |
-| Tweet text | `GET /2/users/{id}/tweets` → `.data[].text` |
-| Tweet `created_at` | `GET /2/users/{id}/tweets` → `.data[].created_at` |
-| Photo URL | `GET /2/users/{id}/tweets` → `.includes.media[]` filtered to `type === "photo"`, take `.url` |
-| Next page | `GET /2/users/{id}/tweets` → `.meta.next_token` |
+Query and resolve chapters or storylines before assignment.
+
+* **Method**: `GET` / `POST`
+* **Route**: `/wp-json/wp/v2/chapters`
+* **Query Parameters (`GET`)**: `search=<chapter_name>&per_page=10`
+* **Payload (`POST`)**:
+```json
+{
+  "name": "Chapter 3: The Heist",
+  "slug": "chapter-3-the-heist",
+  "parent": 0,
+  "description": "Third story arc."
+}
+
+```
+
+
+
+---
+
+## Twitter Payload Mapping Matrix
+
+| Twitter Source Field | Comic Easel Target Field | Transformation / Notes |
+| --- | --- | --- |
+| `tweet.id_str` | `meta.twitter_source_id` | Stored as string to prevent 64-bit integer overflow. |
+| `tweet.entities.media[0]` | `featured_media` | Download largest resolution (`?name=orig`), upload to media endpoint. |
+| `tweet.full_text` | `meta.comic_hovertext` / `content` | Parse: text without t.co links maps to hovertext or post body. |
+| `tweet.created_at` | `date` | Convert Twitter timestamp format to ISO 8601 (`YYYY-MM-DDTHH:MM:SSZ`). |
+| `tweet.entities.hashtags` | `comic-tag` | Match against existing tag slugs or create missing terms. |
+
+---
+
+## Error Handling
+
+* **`400 Bad Request`**: Missing required parameters (`featured_media`, `title`) or malformed JSON.
+* **`401 Unauthorized`**: Invalid application password or missing authorization header.
+* **`403 Forbidden`**: User account lacks `publish_posts` or `upload_files` capabilities.
+* **`409 Conflict`**: Comic with the specified `twitter_source_id` already exists.
+
+---
