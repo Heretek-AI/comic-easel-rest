@@ -85,4 +85,12 @@
       <code><![CDATA[REST_ControllerTest]]></code>
     </UnusedClass>
   </file>
+  <file src="tests/ClassicEditorForComicTest.php">
+    <MissingOverrideAttribute>
+      <code><![CDATA[public function set_up() {]]></code>
+    </MissingOverrideAttribute>
+    <UnusedClass>
+      <code><![CDATA[ClassicEditorForComicTest]]></code>
+    </UnusedClass>
+  </file>
 </files>

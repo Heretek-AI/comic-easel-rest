@@ -8,3 +8,5 @@
 phpunit.xml
 phpcs.xml
 composer.lock
+.env
+mitm_mcp_traffic.db
