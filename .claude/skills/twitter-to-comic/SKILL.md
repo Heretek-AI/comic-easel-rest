@@ -1,246 +1,150 @@
 ---
 name: twitter-to-comic
-description: Turn a Twitter/X URL into a draft comic on shad-base.com by calling the WordPress REST API and X API v2 directly. Use when the user asks to "publish this tweet", "import this tweet", "post this tweet as a comic", "create a draft comic from <url>", "twitter to comic", "x to shad-base", or supplies a Twitter/X URL and asks to add it to the site. Reads WP_BASE_URL, WP_USER, WP_APP_PASSWORD, X_BEARER_TOKEN from env, looks up the artist in references/shad-base-artists.json, fetches the tweet + media via X API v2, uploads each image to WP media, creates a draft comic, and writes source_tweet_id/source_url/ceo_html_below_comic meta via the comic-easel-rest plugin's dedicated endpoint.
-argument-hint: "<twitter-url>"
+description: Ingests webcomics, manga panels, and art threads from X (Twitter) using LobeChat's Twitter connector tools and publishes them to WordPress via the Comic Easel REST API.
 ---
 
-# twitter-to-comic
+# Twitter to Comic Easel Pipeline
 
-Take one Twitter/X URL and turn it into a draft `comic` post on a WordPress site
-running `comic-easel-rest`. No n8n, no intermediary — call the REST APIs with
-`curl` (or `WebFetch` for GETs).
+Autonomous workflow for fetching artwork and comic strips from X (Twitter), preparing webcomic post metadata and media assets, and publishing entries to WordPress using Comic Easel CPT (`comic`).
 
-## Inputs
+## Environment & Credentials
 
-- **`<twitter-url>`** (required): `https://x.com/<handle>/status/<tweet_id>` or
-  `https://twitter.com/<handle>/status/<tweet_id>`. `mobile.twitter.com` also
-  accepted. The path `/<handle>/status/<digits>` is what matters.
-- **Env vars** (all required — stop early with a clear error if any are
-  missing):
-  - `WP_BASE_URL` — base of the WordPress site, e.g. `https://shad-base.com`.
-    Default to `https://shad-base.com` if unset.
-  - `WP_USER` — WordPress username for the Application Password.
-  - `WP_APP_PASSWORD` — that user's Application Password (needs `edit_posts`
-    and `upload_files` capabilities).
-  - `X_BEARER_TOKEN` — X API v2 bearer token (Basic tier or higher; Free tier
-    only sees the last 7 days of tweets).
-- **Artist seed**: read `references/shad-base-artists.json` next to this
-  `SKILL.md`. Each row maps a Twitter handle to a WP username + display
-  nickname. If the incoming handle isn't there, list the known handles and
-  ask the user to add one or pick from the list.
+The agent requires access to the following environment variables:
 
-## Flow
+| Variable | Description |
+| :--- | :--- |
+| `WORDPRESS_USER` | WordPress username with publish permissions |
+| `WORDPRESS_APP_PASS` | WordPress Application Password (basic auth) |
+| `WORDPRESS_BASE_URL` | Site root URL (e.g., `https://example.com`) |
 
-Run these steps in order. Use `curl -sS` for everything; capture each response
-with `2>&1 | tee /tmp/step-N.log` so you can debug failures.
-
-### 1. Parse the URL
-
-Extract `handle` and `tweet_id` from the path. Reject with a clear error if
-the URL doesn't match `/<handle>/status/<digits>`. The handle is the segment
-between the host and `/status/`.
-
-### 2. Look up the artist
-
-Read `references/shad-base-artists.json`, find the row whose `Twitter_Handle`
-equals the parsed handle (case-insensitive match). Capture `Wordpress_Username`
-and `Wordpress_Nickname`. If not found, stop and ask the user.
-
-### 3. Resolve the WP user id
-
-```bash
-curl -sS -u "$WP_USER:$WP_APP_PASSWORD" \
-  "$WP_BASE_URL/wp-json/wp/v2/users?search=$WORDPRESS_USERNAME&per_page=1"
-```
-
-Take the first item's `id`. If the response is `[]`, the WP user doesn't
-exist — stop and ask.
-
-### 4. Resolve the X user id
-
-```bash
-curl -sS -H "Authorization: Bearer $X_BEARER_TOKEN" \
-  "https://api.twitter.com/2/users/by/username/$HANDLE"
-```
-
-Capture `data.id`. If the response is missing `data` or `data.id`, the
-handle isn't on X — stop and ask.
-
-### 5. Fetch tweets (paginated, stop at target)
-
-```bash
-QS="max_results=100&tweet.fields=created_at,attachments&expansions=attachments.media_keys&media.fields=media_key,type,url,preview_image_url"
-URL="https://api.twitter.com/2/users/$X_USER_ID/tweets?$QS"
-```
-
-Loop:
-
-- GET the URL.
-- Accumulate every `includes.media[]` entry into a `media_by_key` map keyed by
-  `media_key`.
-- For each tweet in `data[]`:
-  - If its `id` matches the target `tweet_id`, mark `found_target = true`.
-  - Take its `attachments.media_keys`, look each up in `media_by_key`, and
-    keep only entries where `type === "photo"` AND `url` is a non-empty string.
-    Drop video and animated_gif (they only have `preview_image_url`).
-- If `found_target`, stop paginating.
-- Otherwise, if `meta.next_token` exists, set
-  `pagination_token=<next_token>` and continue. Hard cap at **10 pages** to
-  avoid burning quota on accidental infinite loops.
-
-Emit one record per tweet that has at least one photo URL:
+HTTP Basic Authentication header generation:
+```text
+Authorization: Basic base64(${WORDPRESS_USER}:${WORDPRESS_APP_PASS})
 
 ```
+
+---
+
+## Tool Registry
+
+### Primary Twitter Connector Tools
+
+* `get_tweet`: Fetch tweet payload, full text, author metadata, and media entities by Tweet ID.
+* `get_bookmarks` / `get_users_bookmarks`: Poll saved comics queued for processing.
+* `get_user` / `get_users_by_username`: Retrieve creator display name, handle, and bio details.
+* `like_tweet`: Mark processed tweets to prevent re-ingestion loops.
+* `remove_bookmark`: Eject completed items from the ingestion queue.
+* `post_tweet`: Optionally reply with a published permalink or attribution note.
+
+### Extended Connector Reference
+
+Use these secondary actions when managing expanded queues, user scraping, or list searches:
+`search_tweets`, `get_users_timeline`, `get_users_posts`, `search_news`, `get_posts_reposted_by`, `get_posts_liking_users`, `get_usage_credits`, `get_me`, `get_users_me`, `get_users_bookmarks_by_folder_id`, `get_dm_events`, `get_conversation_messages`, `get_posts_by_id`, `get_posts_by_ids`, `get_posts_quoted_posts`, `get_users_by_usernames`, `search_users`, `get_users_by_id`, `get_users_bookmark_folders`, `get_users_mentions`, `get_home_timeline`, `get_user_tweets`, `get_following`, `get_followers`, `get_dm_with_user`, `unlike_tweet`, `block_user`, `unblock_user`, `mute_user`, `unmute_user`, `send_dm`, `create_group_dm`, `send_dm_to_conversation`, `retweet`, `unretweet`, `follow_user`, `unfollow_user`, `bookmark_tweet`, `create_users_bookmark`, `delete_tweet`, `delete_users_bookmark`.
+
+---
+
+## REST Endpoints & Schemas
+
+All requests against WordPress must include the `Authorization` header.
+
+* **Media Upload**: `POST ${WORDPRESS_BASE_URL}/wp-json/wp/v2/media`
+* Headers: `Content-Disposition: attachment; filename="<slug>.jpg"`, `Content-Type: image/jpeg`
+
+
+* **Comic Creation**: `POST ${WORDPRESS_BASE_URL}/wp-json/wp/v2/comic`
+* Headers: `Content-Type: application/json`
+* Body payload:
+```json
 {
-  tweet_id, text, image_urls: [...], source_url: "https://x.com/$HANDLE/status/$tweet_id",
-  created_at: <ISO 8601 from X>,>
-  Wordpress_Nickname, wp_user_id
+  "title": "Comic Title",
+  "content": "<p>Attribution and description HTML</p>",
+  "status": "publish",
+  "featured_media": 1234,
+  "meta": {
+    "_twitter_source_id": "1892345678901234567"
+  }
 }
-```
-
-If no photo-bearing tweet was found in the page that contained the target,
-stop and report.
-
-### 6. For each tweet, upload images → create comic → write meta
-
-**6a. (optional, idempotency) Skip if already created.** WordPress's REST
-search checks title + content + excerpt. The default title format
-`Comic by <Nickname> - <MMM d, yyyy>` rarely matches a tweet id verbatim,
-but searching for the `source_url` works most of the time:
-
-```bash
-curl -sS -u "$WP_USER:$WP_APP_PASSWORD" \
-  "$WP_BASE_URL/wp-json/wp/v2/comic?search=$SOURCE_URL&per_page=1"
-```
-
-If the response has items, surface the existing post id and skip the create
-steps for that tweet. Note the limitation in your final summary: the plugin
-intentionally does NOT expose `source_tweet_id` / `source_url` as a REST
-`meta` field (see `comic-easel-rest.php` `cer_register_comic_meta_for_rest`
-docblock), so a precise idempotency check would need direct DB access.
-
-**6b. Download each image to a local file.**
-
-```bash
-curl -sSL -o /tmp/img-1.jpg "$IMAGE_URL_1"
-curl -sSL -o /tmp/img-2.jpg "$IMAGE_URL_2"
-```
-
-(Use the URL's last path segment as the filename; fall back to
-`tweet-<tweet_id>-N.jpg`.)
-
-**6c. Upload each to WP media.** Capture `id` and `source_url` from each
-response. Use `-H "Content-Disposition: attachment; filename=\"<file>\""` so
-WP keeps the original filename.
-
-```bash
-for f in /tmp/img-*.jpg; do
-  curl -sS -u "$WP_USER:$WP_APP_PASSWORD" \
-    -H "Content-Disposition: attachment; filename=\"$(basename "$f")\"" \
-    -H "Content-Type: image/jpeg" \
-    --data-binary "@$f" \
-    "$WP_BASE_URL/wp-json/wp/v2/media"
-done
-```
-
-Note: if Twitter served a PNG, GIF, or WEBP, change `Content-Type` to match.
-The X API v2 `media.fields=url` for a photo returns the direct image — the
-extension on the URL hints at the MIME type.
-
-**6d. Create the draft comic.** Use the first uploaded image's `id` as
-`featured_media`. The comic CPT slug is `comic` (per
-`cer_resolve_comic_slug` in the plugin). Pass the tweet's `created_at` as
-`date` (ISO 8601 with `Z`).
-
-```bash
-TITLE="Comic by $WORDPRESS_NICKNAME - $(date -u -d "$CREATED_AT" '+%b %-d, %Y')"
-curl -sS -u "$WP_USER:$WP_APP_PASSWORD" \
-  -H "Content-Type: application/json" \
-  -d "$(jq -n \
-    --arg title "$TITLE" \
-    --arg date "$CREATED_AT" \
-    --argjson author "$WP_USER_ID" \
-    --argjson featured "$FIRST_MEDIA_ID" \
-    '{title:$title, status:"draft", date:$date, author:$author, featured_media:$featured}')" \
-  "$WP_BASE_URL/wp-json/wp/v2/comic"
-```
-
-Capture the response's `id` as `$COMIC_ID`. Do **not** try to set the meta
-fields here — `show_in_rest` is intentionally off for them.
-
-**6f. Write `source_tweet_id`, `source_url`, `ceo_html_below_comic`** via
-the plugin's dedicated endpoint (registered in
-`includes/class-rest-controller.php` `register_endpoint_set_meta`, callback
-`cer_set_comic_meta` in `functions/settings.php`).
-
-Build `ceo_html_below_comic` — one `<img>` per uploaded image, **including
-the first**:
-
-```bash
-CEO_HTML=""
-for u in "${SOURCE_URLS[@]}"; do
-  CEO_HTML+="<img src=\"$u\" alt=\"$(echo "$TWEET_TEXT" | sed 's/&/&amp;/g;s/"/\&quot;/g;s/</\&lt;/g;s/>/\&gt;/g' | cut -c1-200)\" class=\"alignnone\" />"$'\n'
-done
-```
-
-Then:
-
-```bash
-curl -sS -u "$WP_USER:$WP_APP_PASSWORD" \
-  -H "Content-Type: application/json" \
-  -d "$(jq -n \
-    --arg tid "$TWEET_ID" \
-    --arg url "$SOURCE_URL" \
-    --arg html "$CEO_HTML" \
-    '{source_tweet_id:$tid, source_url:$url, ceo_html_below_comic:$html}')" \
-  "$WP_BASE_URL/wp-json/comic-easel/v1/comics/$COMIC_ID/meta"
-```
-
-### 7. Report
-
-Print one line per comic created:
 
 ```
-created comic_id=123 tweet_id=... source_url=... image_count=N
+
+
+
+
+* **Taxonomy Assignment**: `POST ${WORDPRESS_BASE_URL}/wp-json/wp/v2/comic/{id}`
+* Custom taxonomies supported by Comic Easel: `comic-series`, `comic-tag`, `comic-character`.
+
+
+
+---
+
+## Ingestion Protocol
+
+### 1. Identify & Ingest Tweet
+
+1. Extract the numeric tweet status ID from the incoming prompt, bookmark, or search hit.
+2. Call `get_tweet(id: "<TWEET_ID>")`.
+3. Extract:
+* Status text and timestamp
+* Author handle (`username`) and display name (`name`)
+* Attached media objects (filtering for photos/images, capturing high-res URLs and alt text)
+
+
+
+### 2. Deduplication Check
+
+* Query WordPress before downloading media:
+```text
+GET ${WORDPRESS_BASE_URL}/wp-json/wp/v2/comic?meta_key=_twitter_source_id&meta_value=<TWEET_ID>
+
 ```
 
-If the workflow was triggered by a batch (one URL with multiple photo tweets
-is possible — the X API returns the target tweet plus any later photos in the
-same page), repeat the report line per comic.
 
-## Multi-image behaviour
+* If a post is returned, abort ingestion and output the existing comic permalink.
 
-- One comic per photo-bearing tweet.
-- The first image is `featured_media` — it's the hidden thumbnail the comic
-  page uses for archive rendering but does not display on the page itself.
-- `ceo_html_below_comic` contains one `<img>` tag **per image**, including
-  the first. The tweet text is used as the alt text (truncated to 200 chars,
-  HTML-escaped). Tags are joined by `\n`.
+### 3. Media Ingestion
 
-## Auth header cheat sheet
+* Iterate through attached images in sequential panel order.
+* Download each image stream and upload to `/wp-json/wp/v2/media`.
+* Set image `alt_text` using the tweet's native image description when provided.
+* Record the resulting WordPress attachment IDs.
+* **Panel 1**: Designate as the `featured_media` (the primary Comic Easel display image).
+* **Panels 2+**: Append sequentially as standard `<img>` tags inside the post content or assign to Comic Easel multi-comic metadata if configured.
 
-- WP: `Authorization: Basic $(printf '%s:%s' "$WP_USER" "$WP_APP_PASSWORD" | base64)` —
-  curl's `-u user:pass` flag does this for you.
-- X: `Authorization: Bearer $X_BEARER_TOKEN`.
 
-## Failure modes
 
-| Symptom | Cause | Action |
-| --- | --- | --- |
-| `WP_BASE_URL` / `WP_USER` / `WP_APP_PASSWORD` / `X_BEARER_TOKEN` unset | host missing the env var | stop, name the missing var(s) in the error |
-| `references/shad-base-artists.json` has no row for the handle | artist not seeded | list known handles, ask user to add or stop |
-| X `401 Unauthorized` | bearer token expired / wrong project | stop |
-| `X` `429 Too Many Requests` | rate-limited | retry with exponential backoff (X Basic: 100 req / 15 min) |
-| X `data` empty on `by/username` | handle doesn't exist on X | stop, ask user |
-| X walk didn't find the tweet in 10 pages | tweet older than ~1000 most-recent | stop, ask user |
-| WP `wp/v2/users` returns `[]` | WP username wrong | stop, ask user |
-| WP `403` on any call | Application Password wrong / user lacks caps | stop, surface WP error body |
-| WP `404` on `/comic-easel/v1/comics/{id}/meta` | plugin not installed or REST namespace disabled | stop, ask user to verify `enable_rest_namespace` is true |
-| WP `400` on `POST /wp/v2/comic` | author id missing/non-numeric, date not ISO 8601, featured_media non-numeric | inspect the WP error and retry |
+### 4. Content Assembly
 
-## Reference
+* **Post Title**: Use the first concise sentence of the tweet text (strip hashtags, URLs, and limit to 60 characters). If empty, fall back to:
+```text
+{Artist Name} - YYYY-MM-DD
 
-- `references/shad-base-artists.json` — artist seed (edit locally; never
-  commit credentials).
-- `references/api-surface.md` — exact endpoint reference for every WP and X
-  call this skill makes, with response shapes.
+```
+
+
+* **Post Body**: Assemble standard attribution HTML:
+```html
+<p>{Cleaned tweet body text}</p>
+<hr />
+<p><strong>Artist:</strong> <a href="[https://x.com/](https://x.com/){author_username}">{author_name} (@{author_username})</a></p>
+<p><strong>Original Source:</strong> <a href="[https://x.com/](https://x.com/){author_username}/status/{tweet_id}" target="_blank" rel="noopener noreferrer">View on X</a></p>
+
+```
+
+
+
+### 5. Publish & Sync Queue
+
+1. Send `POST` to `/wp-json/wp/v2/comic` with the compiled title, HTML body, `featured_media`, and metadata.
+2. Mark the tweet as ingested via `like_tweet(tweetId: "<TWEET_ID>")`.
+3. If running via a bookmark queue, call `remove_bookmark(tweetId: "<TWEET_ID>")`.
+4. Output a status summary containing the new WordPress Post ID, title, artist, media count, and permalink.
+
+---
+
+## Edge Cases & Rules
+
+* **Multiple Panels**: Never discard panels beyond image 1. If Comic Easel is configured for single-image display, embed secondary panels in the post content so readers can view the complete sequence.
+* **Sensitive Content**: Verify media URLs are accessible. If Twitter flags the tweet as restricted, flag the error to the user rather than creating a post with missing media.
+* **Rate Limits**: Introduce a 1.5–2.0 second pause between uploading multiple media files to low-resource WordPress instances to avoid hitting memory limits or max execution timeouts.
+
+```
