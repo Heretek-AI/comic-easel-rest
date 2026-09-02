@@ -187,4 +187,79 @@ class REST_ControllerTest extends WP_Test_REST_TestCase {
 
 		$this->assertErrorResponse( 'cer_no_image', $response, 400 );
 	}
+
+	// ── Set-meta endpoint ───────────────────────────────────────────────
+
+	public function test_set_meta_route_is_registered() {
+		$routes = rest_get_server()->get_routes();
+		$this->assertArrayHasKey( '/comic-easel/v1/comics/(?P<id>\d+)/meta', $routes );
+	}
+
+	public function test_set_meta_writes_three_keys_for_author() {
+		wp_set_current_user( self::$author_id );
+
+		/** @var int $created */
+		$created = self::factory()->post->create( array( 'post_type' => 'comic' ) );
+		$this->assertNotWPError( $created );
+		$post_id = (int) $created;
+
+		$request = new WP_REST_Request( 'POST', '/comic-easel/v1/comics/' . $post_id . '/meta' );
+		$request->set_body_params( array(
+			'source_tweet_id'     => '1234567890',
+			'source_url'          => 'https://x.com/handle/status/1234567890',
+			'ceo_html_below_comic' => '<img src="https://example.com/x.jpg" alt="" />',
+		) );
+		$response = rest_do_request( $request );
+
+		$this->assertSame( 200, $response->get_status() );
+		$data = $response->get_data();
+		$this->assertSame( $post_id, $data['id'] );
+		$this->assertEqualsCanonicalizing(
+			array( 'source_tweet_id', 'source_url', 'ceo_html_below_comic' ),
+			$data['updated']
+		);
+		$this->assertSame( '1234567890', get_post_meta( $post_id, 'source_tweet_id', true ) );
+		$this->assertSame( 'https://x.com/handle/status/1234567890', get_post_meta( $post_id, 'source_url', true ) );
+		$this->assertSame( '<img src="https://example.com/x.jpg" alt="" />', get_post_meta( $post_id, 'ceo_html_below_comic', true ) );
+	}
+
+	public function test_set_meta_rejects_unknown_comic() {
+		wp_set_current_user( self::$editor_id );
+
+		$request = new WP_REST_Request( 'POST', '/comic-easel/v1/comics/999999/meta' );
+		$request->set_body_params( array( 'source_tweet_id' => 'x' ) );
+		$response = rest_do_request( $request );
+
+		$this->assertErrorResponse( 'cer_invalid_comic', $response, 404 );
+	}
+
+	public function test_set_meta_rejects_empty_body() {
+		wp_set_current_user( self::$author_id );
+
+		/** @var int $created */
+		$created = self::factory()->post->create( array( 'post_type' => 'comic' ) );
+		$this->assertNotWPError( $created );
+		$post_id = (int) $created;
+
+		$request = new WP_REST_Request( 'POST', '/comic-easel/v1/comics/' . $post_id . '/meta' );
+		$request->set_body_params( array() );
+		$response = rest_do_request( $request );
+
+		$this->assertErrorResponse( 'cer_no_meta', $response, 400 );
+	}
+
+	public function test_set_meta_rejects_subscriber() {
+		wp_set_current_user( self::$subscriber_id );
+
+		/** @var int $created */
+		$created = self::factory()->post->create( array( 'post_type' => 'comic' ) );
+		$this->assertNotWPError( $created );
+		$post_id = (int) $created;
+
+		$request = new WP_REST_Request( 'POST', '/comic-easel/v1/comics/' . $post_id . '/meta' );
+		$request->set_body_params( array( 'source_tweet_id' => 'x' ) );
+		$response = rest_do_request( $request );
+
+		$this->assertSame( 403, $response->get_status() );
+	}
 }

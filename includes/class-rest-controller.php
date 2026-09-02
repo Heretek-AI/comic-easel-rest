@@ -41,6 +41,7 @@ class REST_Controller extends WP_REST_Controller {
 		$this->register_endpoint_schedule();
 		$this->register_endpoint_settings();
 		$this->register_endpoint_bulk_import();
+		$this->register_endpoint_set_meta();
 	}
 
 	/**
@@ -226,6 +227,45 @@ class REST_Controller extends WP_REST_Controller {
 		);
 	}
 
+	/**
+	 * POST /comic-easel/v1/comics/{id}/meta — set the comic CPT meta fields
+	 * that automation tools (e.g. the n8n Twitter-to-comic workflow) need to
+	 * write after a comic is created. The fields are not exposed under the
+	 * standard `wp/v2/comic` `meta ( ( intentional — see the docblock on
+	 * `cer_register_comic_meta_for_rest()` for the WP 6.9 / 7.x block-editor
+	 * iframe rationale). This endpoint writes them through `update_post_meta`
+	 * which works regardless of REST visibility.
+	 */
+	private function register_endpoint_set_meta() {
+		register_rest_route(
+			$this->namespace,
+			'/' . $this->rest_base . '/(?P<id>\d+)/meta',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( $this, 'route_set_meta' ),
+				'permission_callback' => array( $this, 'permissions_check_create' ),
+				'args'                => array(
+					'id'               => array(
+						'required'          => true,
+						'type'              => 'integer',
+						'sanitize_callback' => 'absint',
+					),
+					'source_tweet_id'   => array(
+						'type'              => 'string',
+						'sanitize_callback' => 'sanitize_text_field',
+					),
+					'source_url'        => array(
+						'type'              => 'string',
+						'sanitize_callback' => 'esc_url_raw',
+					),
+					'ceo_html_below_comic' => array(
+						'type'     => 'string',
+					),
+				),
+			)
+		);
+	}
+
 	// ── Permission callbacks ─────────────────────────────────────────────
 
 	public function permissions_check_read( WP_REST_Request $request ) {
@@ -268,5 +308,9 @@ class REST_Controller extends WP_REST_Controller {
 
 	public function route_bulk_import( WP_REST_Request $request ) {
 		return cer_bulk_import( $request );
+	}
+
+	public function route_set_meta( WP_REST_Request $request ) {
+		return cer_set_comic_meta( $request );
 	}
 }

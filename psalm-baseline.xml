@@ -34,6 +34,7 @@
       <code><![CDATA[$this->namespace]]></code>
       <code><![CDATA[$this->namespace]]></code>
       <code><![CDATA[$this->namespace]]></code>
+      <code><![CDATA[$this->namespace]]></code>
     </ArgumentTypeCoercion>
     <MissingOverrideAttribute>
       <code><![CDATA[public function register_routes() {]]></code>
@@ -49,6 +50,7 @@
       <code><![CDATA[route_settings_read]]></code>
       <code><![CDATA[route_settings_update]]></code>
       <code><![CDATA[route_with_thumbnail]]></code>
+      <code><![CDATA[route_set_meta]]></code>
     </PossiblyUnusedMethod>
     <PossiblyUnusedParam>
       <code><![CDATA[$request]]></code>

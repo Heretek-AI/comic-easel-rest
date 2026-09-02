@@ -1,0 +1,257 @@
+{
+  "name": "Twitter URL to shad-base.com Comic",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "twitter-to-comic",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "a1f0a000-0000-0000-0000-000000000001",
+      "name": "Webhook: Twitter URL",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [-1400, 0],
+      "webhookId": "twitter-to-comic"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const url = ($json.body && $json.body.twitter_url) || $json.twitter_url || '';\nif (!url) {\n  throw new Error('Missing twitter_url in webhook body.');\n}\nconst m = url.match(/(?:twitter\\.com|x\\.com|mobile\\.twitter\\.com)\\/([^/\\?]+)\\/status\\/(\\d+)/i);\nif (!m) {\n  throw new Error('Could not parse Twitter URL: ' + url);\n}\nreturn [{ json: { handle: m[1], tweet_id: m[2], source_url: url } }];"
+      },
+      "id": "a1f0a000-0000-0000-0000-000000000002",
+      "name": "Parse Twitter URL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-1160, 0]
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "value": "shad-base-artists",
+          "mode": "name"
+        },
+        "mustMatch": "all",
+        "conditions": {
+          "conditions": [
+            {
+              "columnName": "Twitter_Handle",
+              "condition": "equals",
+              "value": "={{ $json.handle }}"
+            }
+          ]
+        },
+        "returnAll": false,
+        "limit": 1
+      },
+      "id": "a1f0a000-0000-0000-0000-000000000003",
+      "name": "Lookup Artist",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [-920, -100]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://shad-base.com/wp-json/wp/v2/users?search={{ $json.Wordpress_Username }}&per_page=1",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpBasicAuth",
+        "sendQueryParameters": false,
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "a1f0a000-0000-0000-0000-000000000004",
+      "name": "Resolve WP User",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [-680, -100]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.twitter.com/2/users/by/username/{{ $('Parse Twitter URL').item.json.handle }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendQueryParameters": false,
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "a1f0a000-0000-0000-0000-000000000005",
+      "name": "Resolve X User ID",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [-680, 100]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const inputs = $input.all();\nconst xUser = (inputs.find(i => i.json.data && i.json.data.id) || {}).json;\nconst xUserId = xUser && xUser.data && xUser.data.id;\nconst parsed = $('Parse Twitter URL').first().json;\nif (!xUserId) {\n  throw new Error('Could not resolve X user id for handle ' + parsed.handle);\n}\nconst wpUsers = (($('Resolve WP User').first().json) || []);\nconst wpUser = wpUsers[0];\nif (!wpUser || !wpUser.id) {\n  throw new Error('Could not resolve WP user id for ' + parsed.Wordpress_Username);\n}\nconst artist = $('Lookup Artist').first().json;\nif (!artist || !artist.Wordpress_Nickname) {\n  throw new Error('Artist record missing Wordpress_Nickname.');\n}\n\nconst bearer = $env.X_BEARER_TOKEN;\nif (!bearer) {\n  throw new Error('X_BEARER_TOKEN env var is not set on the n8n host.');\n}\n\nconst headers = { Authorization: 'Bearer ' + bearer };\nconst targetId = String(parsed.tweet_id);\n\nlet paginationToken = null;\nconst mediaByKey = {};\nconst rows = [];\nlet pages = 0;\nconst MAX_PAGES = 10;\n\nwhile (pages < MAX_PAGES) {\n  pages++;\n  const qs = new URLSearchParams({\n    max_results: '100',\n    'tweet.fields': 'created_at,attachments',\n    expansions: 'attachments.media_keys',\n    'media.fields': 'media_key,type,url,preview_image_url'\n  });\n  if (paginationToken) qs.set('pagination_token', paginationToken);\n  const resp = await this.helpers.httpRequest({\n    method: 'GET',\n    url: 'https://api.twitter.com/2/users/' + xUserId + '/tweets?' + qs.toString(),\n    headers,\n    json: true\n  });\n  const tweets = resp.data || [];\n  const media = (resp.includes && resp.includes.media) || [];\n  for (const m of media) mediaByKey[m.media_key] = m;\n\n  let foundTarget = false;\n  for (const t of tweets) {\n    if (String(t.id) === targetId) foundTarget = true;\n    const keys = (t.attachments && t.attachments.media_keys) || [];\n    const imageUrls = keys\n      .map(k => mediaByKey[k])\n      .filter(m => m && m.type === 'photo' && m.url)\n      .map(m => m.url);\n    if (imageUrls.length) {\n      rows.push({\n        tweet_id: t.id,\n        text: t.text || '',\n        created_at: t.created_at,\n        image_urls: imageUrls,\n        source_url: 'https://x.com/' + parsed.handle + '/status/' + t.id\n      });\n    }\n  }\n  if (foundTarget) break;\n  if (!resp.meta || !resp.meta.next_token) break;\n  paginationToken = resp.meta.next_token;\n}\n\nif (!rows.length) {\n  throw new Error('No tweets with images found for tweet id ' + targetId);\n}\n\nfor (const r of rows) {\n  r.Wordpress_Nickname = artist.Wordpress_Nickname;\n  r.wp_user_id = wpUser.id;\n}\n\nreturn rows.map(r => ({ json: r }));"
+      },
+      "id": "a1f0a000-0000-0000-0000-000000000006",
+      "name": "Fetch Tweets with Images",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-440, 0],
+      "notes": "Walks X /2/users/:id/tweets up to 10 pages, stops as soon as the target tweet is found. Emits one row per matching tweet, each carrying its image URLs, the artist nickname, and the resolved WP user id."
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "a1f0a000-0000-0000-0000-000000000007",
+      "name": "Per Tweet",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [-200, 0]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const tweet = $json;\n\nconst wpUser = $env.WP_USER;\nconst wpAppPassword = $env.WP_APP_PASSWORD;\nif (!wpUser || !wpAppPassword) {\n  throw new Error('WP_USER and WP_APP_PASSWORD env vars are required.');\n}\nconst auth = Buffer.from(wpUser + ':' + wpAppPassword).toString('base64');\nconst wpHeaders = { Authorization: 'Basic ' + auth };\n\nconst uploaded = [];\nfor (const imageUrl of tweet.image_urls) {\n  const img = await this.helpers.httpRequest({\n    method: 'GET',\n    url: imageUrl,\n    encoding: 'arraybuffer',\n    json: false\n  });\n  const buf = Buffer.from(img.body || img);\n  const filename = imageUrl.split('/').pop().split('?')[0] || 'image.jpg';\n  const media = await this.helpers.httpRequest({\n    method: 'POST',\n    url: 'https://shad-base.com/wp-json/wp/v2/media',\n    headers: {\n      ...wpHeaders,\n      'Content-Disposition': 'attachment; filename=\"' + filename + '\"',\n      'Content-Type': 'image/jpeg'\n    },\n    body: buf,\n    json: true\n  });\n  uploaded.push({ id: media.id, source_url: media.source_url });\n}\n\nconst created = new Date(tweet.created_at);\nconst title = 'Comic by ' + tweet.Wordpress_Nickname + ' - ' + created.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });\n\nconst comic = await this.helpers.httpRequest({\n  method: 'POST',\n  url: 'https://shad-base.com/wp-json/wp/v2/comic',\n  headers: { ...wpHeaders, 'Content-Type': 'application/json' },\n  body: {\n    title: title,\n    status: 'draft',\n    date: created.toISOString(),\n    author: tweet.wp_user_id,\n    featured_media: uploaded[0] && uploaded[0].id\n  },\n  json: true\n});\n\nconst altText = (tweet.text || '').replace(/\\s+/g, ' ').trim().slice(0, 200) || tweet.Wordpress_Nickname;\nconst escapeAttr = (s) => String(s).replace(/&/g, '&amp;').replace(/\"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst html = uploaded.map(u => '<img src=\"' + u.source_url + '\" alt=\"' + escapeAttr(altText) + '\" class=\"alignnone\" />').join('\\n');\n\nawait this.helpers.httpRequest({\n  method: 'POST',\n  url: 'https://shad-base.com/wp-json/comic-easel/v1/comics/' + comic.id + '/meta',\n  headers: { ...wpHeaders, 'Content-Type': 'application/json' },\n  body: {\n    source_tweet_id: String(tweet.tweet_id),\n    source_url: tweet.source_url,\n    ceo_html_below_comic: html\n  },\n  json: true\n});\n\nreturn [{ json: {\n  tweet_id: tweet.tweet_id,\n  comic_id: comic.id,\n  image_count: uploaded.length,\n  source_url: tweet.source_url\n} }];"
+      },
+      "id": "a1f0a000-0000-0000-0000-000000000008",
+      "name": "Process Tweet",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [40, 0],
+      "notes": "Per tweet: upload each image to WP, create a draft comic with the first image as featured media, then set source_tweet_id, source_url, and ceo_html_below_comic via the /comic-easel/v1/comics/{id}/meta endpoint."
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"created\": {{ JSON.stringify($('Process Tweet').all().map(i => i.json)) }}\n}",
+        "options": {}
+      },
+      "id": "a1f0a000-0000-0000-0000-000000000009",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [280, 0]
+    }
+  ],
+  "connections": {
+    "Webhook: Twitter URL": {
+      "main": [
+        [
+          {
+            "node": "Parse Twitter URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Twitter URL": {
+      "main": [
+        [
+          {
+            "node": "Lookup Artist",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lookup Artist": {
+      "main": [
+        [
+          {
+            "node": "Resolve WP User",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve WP User": {
+      "main": [
+        [
+          {
+            "node": "Resolve X User ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve X User ID": {
+      "main": [
+        [
+          {
+            "node": "Fetch Tweets with Images",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Tweets with Images": {
+      "main": [
+        [
+          {
+            "node": "Per Tweet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Per Tweet": {
+      "main": [
+        [
+          {
+            "node": "Process Tweet",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Tweet": {
+      "main": [
+        [
+          {
+            "node": "Per Tweet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "shad-base"
+    }
+  ],
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "pinData": {}
+}

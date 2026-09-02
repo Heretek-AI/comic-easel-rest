@@ -419,3 +419,58 @@ function cer_bulk_item_resolve_schedule( array $item ) { // NOSONAR: cer_* snake
 	}
 	return array( 'publish', '' );
 }
+
+/**
+ * POST /comic-easel/v1/comics/{id}/meta — set the comic CPT meta fields
+ * that automation tools (e.g. the n8n Twitter-to-comic workflow) need to
+ * write after a comic is created. The fields are intentionally not exposed
+ * under the standard `wp/v2/comic` `meta` (see the docblock on
+ * `cer_register_comic_meta_for_rest()` for the WP 6.9 / 7.x block-editor
+ * iframe rationale); this endpoint writes them through `update_post_meta`,
+ * which works regardless of REST visibility.
+ *
+ * Any of the three keys may be omitted; only supplied keys are written.
+ * `ceo_html_below_comic` is stored as raw HTML and intentionally NOT
+ * sanitized — the Comic Easel parent plugin's meta box writes it the same
+ * way, and stripping tags would break the existing admin UX.
+ *
+ * @param WP_REST_Request $request The request.
+ * @return WP_REST_Response|WP_Error
+ */
+function cer_set_comic_meta( WP_REST_Request $request ) {
+	$post_id = (int) $request->get_param( 'id' );
+	$slug    = cer_resolve_comic_slug();
+
+	$post = get_post( $post_id );
+	if ( ! $post instanceof WP_Post || $post->post_type !== $slug ) {
+		return new WP_Error(
+			'cer_invalid_comic',
+			__( 'Comic does not exist.', 'comic-easel-rest' ),
+			array( 'status' => 404 )
+		);
+	}
+
+	$written = array();
+	foreach ( array( 'source_tweet_id', 'source_url', 'ceo_html_below_comic' ) as $key ) {
+		if ( $request->has_param( $key ) && null !== $request->get_param( $key ) ) {
+			update_post_meta( $post_id, $key, (string) $request->get_param( $key ) );
+			$written[] = $key;
+		}
+	}
+
+	if ( empty( $written ) ) {
+		return new WP_Error(
+			'cer_no_meta',
+			__( 'No recognised meta keys supplied.', 'comic-easel-rest' ),
+			array( 'status' => 400 )
+		);
+	}
+
+	return new WP_REST_Response(
+		array(
+			'id'      => $post_id,
+			'updated' => $written,
+		),
+		200
+	);
+}
