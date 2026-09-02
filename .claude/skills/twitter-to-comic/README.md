@@ -1,4 +1,4 @@
-[# `/twitter-to-comic` — Claude Code skill
+# `/twitter-to-comic` — Claude Code skill
 
 A Claude Code skill that turns a Twitter/X URL into a draft `comic` post on a
 WordPress site running [`comic-easel-rest`](../../). The agent calls the
