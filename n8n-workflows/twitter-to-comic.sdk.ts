@@ -1,4 +1,3 @@
-// Stripped SDK code — HTML escapes from subagent transcription are removed
 const webhookTrigger = trigger({
   type: 'n8n-nodes-base.webhook',
   version: 2.1,
@@ -21,7 +20,7 @@ const parseTwitterUrl = node({
     name: 'Parse Twitter URL',
     parameters: {
       mode: 'runOnceForEachItem',
-      jsCode: 'const twitterUrl = $json.body && $json.body.twitter_url || $json.twitter_url || "";\nconst match = twitterUrl.match(/^https?:\\/\\/(?:www\\.|mobile\\.)?(?:twitter|x)\\.com\\/([^/]+)\\/status\\/(\\d+)/i);\nif (!match) throw new Error("Invalid Twitter URL: " + twitterUrl);\nconst handle = match[1];\nconst tweetId = match[2];\nreturn [{ json: { handle: handle, tweet_id: tweetId, source_url: twitterUrl } }];',
+      jsCode: 'const twitterUrl = $json.body && $json.body.twitter_url || $json.twitter_url || "";\nconst match = twitterUrl.match(/^https?:\\/\\/(?:www\\.|mobile\\.)?(?:twitter|x)\\.com\\/([^/]+)\\/status\\/(\\d+)/i);\nif (!match) throw new Error("Invalid Twitter URL: " + twitterUrl);\nreturn [{ json: { handle: match[1], tweet_id: match[2], source_url: twitterUrl } }];',
     },
     position: [540, 300],
   },
@@ -52,35 +51,37 @@ const lookupArtist = node({
 });
 
 const resolveWpUser = node({
-  type: 'n8n-nodes-base.httpRequest',
-  version: 4.3,
+  type: 'n8n-nodes-base.wordpress',
+  version: 1,
   config: {
     name: 'Resolve WP User',
     parameters: {
-      method: 'GET',
-      url: expr('https://shad-base.com/wp-json/wp/v2/users?search={{ $json.Wordpress_Username }}&per_page=1'),
-      options: { response: { response: { responseFormat: 'json' } } },
+      resource: 'user',
+      operation: 'getAll',
+      returnAll: false,
+      limit: 1,
+      options: { search: expr('{{ $json.Wordpress_Username }}') },
     },
-    credentials: { httpBasicAuth: newCredential('WP Basic') },
+    credentials: { wordpressApi: newCredential('Wordpress account') },
     position: [1140, 300],
   },
   output: [{ id: 1, name: 'handle', slug: 'handle' }],
 });
 
 const resolveXUserId = node({
-  type: 'n8n-nodes-base.httpRequest',
-  version: 4.3,
+  type: 'n8n-nodes-base.twitter',
+  version: 2,
   config: {
     name: 'Resolve X User ID',
     parameters: {
-      method: 'GET',
-      url: expr('https://api.twitter.com/2/users/by/username/{{ $("Parse Twitter URL").item.json.handle }}'),
-      options: { response: { response: { responseFormat: 'json' } } },
+      resource: 'user',
+      operation: 'searchUser',
+      user: { __rl: true, mode: 'username', value: expr('{{ $("Parse Twitter URL").item.json.handle }}') },
     },
-    credentials: { httpHeaderAuth: newCredential('X API') },
+    credentials: { twitterOAuth2Api: newCredential('X account') },
     position: [1340, 300],
   },
-  output: [{ data: { id: '12345' } }],
+  output: [{ id: '12345', name: 'Display Name', username: 'handle' }],
 });
 
 const fetchTweetsWithImages = node({
@@ -90,7 +91,7 @@ const fetchTweetsWithImages = node({
     name: 'Fetch Tweets with Images',
     parameters: {
       mode: 'runOnceForEachItem',
-      jsCode: 'const xUserId = $("Resolve X User ID").first().json.data.id;\nconst wpUserArr = $("Resolve WP User").first().json;\nconst wpUserId = wpUserArr[0].id;\nconst nickname = $("Lookup Artist").first().json.Wordpress_Nickname;\nconst handle = $("Parse Twitter URL").first().json.handle;\nconst targetTweetId = $("Parse Twitter URL").first().json.tweet_id;\n\nconst bearer = $env.X_BEARER_TOKEN;\nif (!bearer) throw new Error("X_BEARER_TOKEN env var is not set");\n\nconst mediaByKey = {};\nlet paginationToken = null;\nlet foundTarget = false;\nconst MAX_PAGES = 10;\nlet pages = 0;\nconst allTweets = [];\n\nwhile (pages < MAX_PAGES && !foundTarget) {\n  pages++;\n  const params = new URLSearchParams({\n    max_results: "100",\n    "tweet.fields": "created_at,attachments",\n    expansions: "attachments.media_keys",\n    "media.fields": "media_key,type,url,preview_image_url",\n  });\n  if (paginationToken) params.set("pagination_token", paginationToken);\n\n  const page = await this.helpers.httpRequest({\n    method: "GET",\n    url: "https://api.twitter.com/2/users/" + xUserId + "/tweets?" + params.toString(),\n    headers: { Authorization: "Bearer " + bearer },\n    json: true,\n  });\n\n  const tweets = page.data || [];\n  const media = (page.includes && page.includes.media) || [];\n  for (const m of media) mediaByKey[m.media_key] = m;\n\n  for (const t of tweets) {\n    allTweets.push(t);\n    if (String(t.id) === String(targetTweetId)) foundTarget = true;\n  }\n\n  if (foundTarget) break;\n  if (!page.meta || !page.meta.next_token) break;\n  paginationToken = page.meta.next_token;\n}\n\nif (!foundTarget) throw new Error("Tweet " + targetTweetId + " not found within " + MAX_PAGES + " pages");\n\nconst items = [];\nfor (const tweet of allTweets) {\n  const keys = tweet.attachments && tweet.attachments.media_keys;\n  if (!keys) continue;\n  const urls = [];\n  for (const k of keys) {\n    const m = mediaByKey[k];\n    if (m && m.type === "photo" && m.url) urls.push(m.url);\n  }\n  if (urls.length === 0) continue;\n  items.push({\n    json: {\n      tweet_id: tweet.id,\n      text: tweet.text || "",\n      created_at: tweet.created_at,\n      image_urls: urls,\n      source_url: "https://x.com/" + handle + "/status/" + tweet.id,\n      Wordpress_Nickname: nickname,\n      wp_user_id: wpUserId,\n    },\n  });\n}\n\nif (items.length === 0) throw new Error("No image-bearing tweets in window");\nreturn items;',
+      jsCode: 'const xUserId = $("Resolve X User ID").first().json.id;\nconst wpUsers = $("Resolve WP User").first().json;\nconst wpUserId = wpUsers[0].id;\nconst nickname = $("Lookup Artist").first().json.Wordpress_Nickname;\nconst handle = $("Parse Twitter URL").first().json.handle;\nconst targetTweetId = $("Parse Twitter URL").first().json.tweet_id;\n\nconst bearer = $env.X_BEARER_TOKEN;\nif (!bearer) throw new Error("X_BEARER_TOKEN env var is not set");\n\nconst mediaByKey = {};\nlet paginationToken = null;\nlet foundTarget = false;\nconst MAX_PAGES = 10;\nlet pages = 0;\nconst allTweets = [];\n\nwhile (pages < MAX_PAGES && !foundTarget) {\n  pages++;\n  const params = new URLSearchParams({\n    max_results: "100",\n    "tweet.fields": "created_at,attachments",\n    expansions: "attachments.media_keys",\n    "media.fields": "media_key,type,url,preview_image_url",\n  });\n  if (paginationToken) params.set("pagination_token", paginationToken);\n\n  const page = await this.helpers.httpRequest({\n    method: "GET",\n    url: "https://api.twitter.com/2/users/" + xUserId + "/tweets?" + params.toString(),\n    headers: { Authorization: "Bearer " + bearer },\n    json: true,\n  });\n\n  const tweets = page.data || [];\n  const media = (page.includes && page.includes.media) || [];\n  for (const m of media) mediaByKey[m.media_key] = m;\n\n  for (const t of tweets) {\n    allTweets.push(t);\n    if (String(t.id) === String(targetTweetId)) foundTarget = true;\n  }\n\n  if (foundTarget) break;\n  if (!page.meta || !page.meta.next_token) break;\n  paginationToken = page.meta.next_token;\n}\n\nif (!foundTarget) throw new Error("Tweet " + targetTweetId + " not found within " + MAX_PAGES + " pages");\n\nconst items = [];\nfor (const tweet of allTweets) {\n  const keys = tweet.attachments && tweet.attachments.media_keys;\n  if (!keys) continue;\n  const urls = [];\n  for (const k of keys) {\n    const m = mediaByKey[k];\n    if (m && m.type === "photo" && m.url) urls.push(m.url);\n  }\n  if (urls.length === 0) continue;\n  items.push({\n    json: {\n      tweet_id: tweet.id,\n      text: tweet.text || "",\n      created_at: tweet.created_at,\n      image_urls: urls,\n      source_url: "https://x.com/" + handle + "/status/" + tweet.id,\n      Wordpress_Nickname: nickname,\n      wp_user_id: wpUserId,\n    },\n  });\n}\n\nif (items.length === 0) throw new Error("No image-bearing tweets in window");\nreturn items;',
     },
     position: [1540, 300],
   },

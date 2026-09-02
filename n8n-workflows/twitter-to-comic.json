@@ -56,50 +56,52 @@
     },
     {
       "parameters": {
-        "method": "GET",
-        "url": "=https://shad-base.com/wp-json/wp/v2/users?search={{ $json.Wordpress_Username }}&per_page=1",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "httpBasicAuth",
-        "sendQueryParameters": false,
+        "resource": "user",
+        "operation": "getAll",
+        "returnAll": false,
+        "limit": 1,
         "options": {
-          "response": {
-            "response": {
-              "responseFormat": "json"
-            }
-          }
+          "search": "={{ $json.Wordpress_Username }}"
         }
       },
       "id": "a1f0a000-0000-0000-0000-000000000004",
       "name": "Resolve WP User",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.4,
-      "position": [-680, -100]
+      "type": "n8n-nodes-base.wordpress",
+      "typeVersion": 1,
+      "position": [-680, -100],
+      "credentials": {
+        "wordpressApi": {
+          "id": "bNYpWTFRYf9vPG0w",
+          "name": "Wordpress account"
+        }
+      }
     },
     {
       "parameters": {
-        "method": "GET",
-        "url": "=https://api.twitter.com/2/users/by/username/{{ $('Parse Twitter URL').item.json.handle }}",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "httpHeaderAuth",
-        "sendQueryParameters": false,
-        "options": {
-          "response": {
-            "response": {
-              "responseFormat": "json"
-            }
-          }
+        "resource": "user",
+        "operation": "searchUser",
+        "user": {
+          "__rl": true,
+          "value": "={{ $('Parse Twitter URL').item.json.handle }}",
+          "mode": "username"
         }
       },
       "id": "a1f0a000-0000-0000-0000-000000000005",
       "name": "Resolve X User ID",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.4,
-      "position": [-680, 100]
+      "type": "n8n-nodes-base.twitter",
+      "typeVersion": 2,
+      "position": [-680, 100],
+      "credentials": {
+        "twitterOAuth2Api": {
+          "id": "Zx7gtWtUhlR5BrcC",
+          "name": "X account"
+        }
+      }
     },
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "const inputs = $input.all();\nconst xUser = (inputs.find(i => i.json.data && i.json.data.id) || {}).json;\nconst xUserId = xUser && xUser.data && xUser.data.id;\nconst parsed = $('Parse Twitter URL').first().json;\nif (!xUserId) {\n  throw new Error('Could not resolve X user id for handle ' + parsed.handle);\n}\nconst wpUsers = (($('Resolve WP User').first().json) || []);\nconst wpUser = wpUsers[0];\nif (!wpUser || !wpUser.id) {\n  throw new Error('Could not resolve WP user id for ' + parsed.Wordpress_Username);\n}\nconst artist = $('Lookup Artist').first().json;\nif (!artist || !artist.Wordpress_Nickname) {\n  throw new Error('Artist record missing Wordpress_Nickname.');\n}\n\nconst bearer = $env.X_BEARER_TOKEN;\nif (!bearer) {\n  throw new Error('X_BEARER_TOKEN env var is not set on the n8n host.');\n}\n\nconst headers = { Authorization: 'Bearer ' + bearer };\nconst targetId = String(parsed.tweet_id);\n\nlet paginationToken = null;\nconst mediaByKey = {};\nconst rows = [];\nlet pages = 0;\nconst MAX_PAGES = 10;\n\nwhile (pages < MAX_PAGES) {\n  pages++;\n  const qs = new URLSearchParams({\n    max_results: '100',\n    'tweet.fields': 'created_at,attachments',\n    expansions: 'attachments.media_keys',\n    'media.fields': 'media_key,type,url,preview_image_url'\n  });\n  if (paginationToken) qs.set('pagination_token', paginationToken);\n  const resp = await this.helpers.httpRequest({\n    method: 'GET',\n    url: 'https://api.twitter.com/2/users/' + xUserId + '/tweets?' + qs.toString(),\n    headers,\n    json: true\n  });\n  const tweets = resp.data || [];\n  const media = (resp.includes && resp.includes.media) || [];\n  for (const m of media) mediaByKey[m.media_key] = m;\n\n  let foundTarget = false;\n  for (const t of tweets) {\n    if (String(t.id) === targetId) foundTarget = true;\n    const keys = (t.attachments && t.attachments.media_keys) || [];\n    const imageUrls = keys\n      .map(k => mediaByKey[k])\n      .filter(m => m && m.type === 'photo' && m.url)\n      .map(m => m.url);\n    if (imageUrls.length) {\n      rows.push({\n        tweet_id: t.id,\n        text: t.text || '',\n        created_at: t.created_at,\n        image_urls: imageUrls,\n        source_url: 'https://x.com/' + parsed.handle + '/status/' + t.id\n      });\n    }\n  }\n  if (foundTarget) break;\n  if (!resp.meta || !resp.meta.next_token) break;\n  paginationToken = resp.meta.next_token;\n}\n\nif (!rows.length) {\n  throw new Error('No tweets with images found for tweet id ' + targetId);\n}\n\nfor (const r of rows) {\n  r.Wordpress_Nickname = artist.Wordpress_Nickname;\n  r.wp_user_id = wpUser.id;\n}\n\nreturn rows.map(r => ({ json: r }));"
+        "jsCode": "const xUserId = $('Resolve X User ID').first().json.id;\nconst wpUsers = $('Resolve WP User').first().json;\nconst wpUserId = wpUsers[0] && wpUsers[0].id;\nconst nickname = $('Lookup Artist').first().json.Wordpress_Nickname;\nconst handle = $('Parse Twitter URL').first().json.handle;\nconst targetTweetId = $('Parse Twitter URL').first().json.tweet_id;\n\nconst bearer = $env.X_BEARER_TOKEN;\nif (!bearer) {\n  throw new Error('X_BEARER_TOKEN env var is not set on the n8n host.');\n}\nif (!xUserId) throw new Error('Could not resolve X user id.');\nif (!wpUserId) throw new Error('Could not resolve WP user id.');\n\nconst mediaByKey = {};\nlet paginationToken = null;\nlet foundTarget = false;\nlet pages = 0;\nconst MAX_PAGES = 10;\nconst allTweets = [];\n\nwhile (pages < MAX_PAGES && !foundTarget) {\n  pages++;\n  const qs = new URLSearchParams({\n    max_results: '100',\n    'tweet.fields': 'created_at,attachments',\n    expansions: 'attachments.media_keys',\n    'media.fields': 'media_key,type,url,preview_image_url'\n  });\n  if (paginationToken) qs.set('pagination_token', paginationToken);\n  const resp = await this.helpers.httpRequest({\n    method: 'GET',\n    url: 'https://api.twitter.com/2/users/' + xUserId + '/tweets?' + qs.toString(),\n    headers: { Authorization: 'Bearer ' + bearer },\n    json: true\n  });\n  const tweets = resp.data || [];\n  const media = (resp.includes && resp.includes.media) || [];\n  for (const m of media) mediaByKey[m.media_key] = m;\n  for (const t of tweets) {\n    allTweets.push(t);\n    if (String(t.id) === String(targetTweetId)) foundTarget = true;\n  }\n  if (foundTarget) break;\n  if (!resp.meta || !resp.meta.next_token) break;\n  paginationToken = resp.meta.next_token;\n}\n\nif (!foundTarget) {\n  throw new Error('Tweet ' + targetTweetId + ' not found within ' + MAX_PAGES + ' pages.');\n}\n\nconst rows = [];\nfor (const tweet of allTweets) {\n  const keys = tweet.attachments && tweet.attachments.media_keys;\n  if (!keys) continue;\n  const urls = keys\n    .map(k => mediaByKey[k])\n    .filter(m => m && m.type === 'photo' && m.url)\n    .map(m => m.url);\n  if (!urls.length) continue;\n  rows.push({\n    json: {\n      tweet_id: tweet.id,\n      text: tweet.text || '',\n      created_at: tweet.created_at,\n      image_urls: urls,\n      source_url: 'https://x.com/' + handle + '/status/' + tweet.id,\n      Wordpress_Nickname: nickname,\n      wp_user_id: wpUserId\n    }\n  });\n}\n\nif (!rows.length) {\n  throw new Error('No tweets with images found.');\n}\nreturn rows;"
       },
       "id": "a1f0a000-0000-0000-0000-000000000006",
       "name": "Fetch Tweets with Images",

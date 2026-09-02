@@ -31,34 +31,33 @@ featured (hidden thumbnail) media, and the ceo_html_below_comic block contains
 The workflow can be deployed two ways:
 
 **a) Import the JSON file** — in your n8n instance, **Workflows → Import from
-File…** and select `twitter-to-comic.json`. Open the imported workflow and
-you'll be prompted to assign credentials to the two HTTP Request nodes that
-need them (see step 2 below).
+File…** and select `twitter-to-comic.json`. After import, the two integration
+nodes (`Resolve WP User` and `Resolve X User ID`) will prompt you to pick or
+create credentials of the right type (`wordpressApi` and `twitterOAuth2Api`).
 
-**b) Re-deploy via the n8n MCP** — the file in this repo is also a snapshot of
-the live workflow (id `t3AFUdqnm0kikFsm`,
-URL `https://node.heretek.one/workflow/t3AFUdqnm0kikFsm`). To rebuild it from
-the SDK source the workflow was authored against, see
-`twitter-to-comic.sdk.ts` — run `n8n-mcp-validate_workflow` against it, then
-`n8n-mcp-create_workflow_from_code`.
+**b) Re-deploy via the n8n MCP** — the live workflow (id `Ls6YmSqhd5nJC2q6`,
+URL `https://node.heretek.one/workflow/Ls6YmSqhd5nJC2q6`) was authored from
+`twitter-to-comic.sdk.ts`. To rebuild it:
 
-After import/deploy, open the workflow in the n8n editor and assign credentials
-to:
+1. `n8n-mcp-validate_workflow` against the SDK source.
+2. `n8n-mcp-create_workflow_from_code` with the SDK source as the `code` arg.
 
-- **Resolve WP User** — uses an `httpBasicAuth` credential. Configure it with a
-  WordPress username and Application Password that has `edit_posts` /
-  `upload_files` capabilities. The Application Password is fine to be one
-  shared admin's password — the comic is authored as the artist via the
-  `author` field in the `POST` body.
+The MCP will auto-attach the existing `Wordpress account` and `X account`
+credentials (if they're the only ones of their type in the project).
 
-- **Resolve X User ID** — uses an `httpHeaderAuth` credential. Set the header
-  name to `Authorization` and the value to `Bearer <your X API bearer token>`.
-  (Alternatively, store the bearer token in an env var as described below and
-  swap to `headerAuth` with a generic value.)
+### Node types used
 
-If you re-deploy via the MCP, the two HTTP Request credentials are NOT
-auto-assigned (no existing credentials of those types to reuse). Configure
-them manually after the MCP deploys the workflow.
+| Node | Type | Credential |
+| --- | --- | --- |
+| Webhook Trigger | `n8n-nodes-base.webhook` | — |
+| Parse Twitter URL | `n8n-nodes-base.code` | — |
+| Lookup Artist | `n8n-nodes-base.dataTable` | — |
+| Resolve WP User | `n8n-nodes-base.wordpress` (`user.getAll`) | `wordpressApi` (existing "Wordpress account") |
+| Resolve X User ID | `n8n-nodes-base.twitter` v2 (`user.searchUser`) | `twitterOAuth2Api` (existing "X account") |
+| Fetch Tweets with Images | `n8n-nodes-base.code` | — |
+| Per Tweet | `n8n-nodes-base.splitInBatches` | — |
+| Process Tweet | `n8n-nodes-base.code` | — |
+| Respond to Webhook | `n8n-nodes-base.respondToWebhook` | — |
 
 ### 2. Environment variables
 
