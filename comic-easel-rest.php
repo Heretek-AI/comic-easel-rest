@@ -65,12 +65,28 @@ function cer_boot() {
 
 	cer_init_option_defaults();
 
+	// Always force the classic editor for the comic CPT. The parent
+	// comic-easel plugin registers seven classic-style meta boxes (HTML above/
+	// below, transcript, hovertext, buy print, etc.) and the editing UX is
+	// built around them. Forcing classic avoids the block-editor iframe-mode
+	// codepath entirely, which on WP 6.9 / 7.x collides with the deprecation
+	// warnings from third-party blocks registered at apiVersion < 3.
+	add_filter( 'use_block_editor_for_post_type', 'cer_force_classic_editor_for_comic', 10, 2 );
+
 	if ( cer_get_option( 'enable_cpt_args_shim' ) ) {
 		ComicEaselRest\CPT_Shim::register();
 	}
 
 	if ( cer_get_option( 'enable_rest_namespace' ) ) {
 		add_action( 'rest_api_init', array( new ComicEaselRest\REST_Controller(), 'register_routes' ) );
+		// Register the comic CPT meta fields used by the parent plugin's
+		// ceo_html_below_comic meta box handler (and historically by the
+		// n8n Twitter-to-comic workflow). Direct get_post_meta /
+		// update_post_meta calls work without show_in_rest; we intentionally
+		// leave it off to avoid crossing the block-editor iframe-mode
+		// threshold on WP 6.9 / 7.x. See the docblock on
+		// cer_register_comic_meta_for_rest() for the full rationale.
+		cer_register_comic_meta_for_rest();
 	}
 }
 
@@ -83,6 +99,82 @@ function cer_load_textdomain() {
 		false,
 		dirname( plugin_basename( CER_FILE ) ) . '/languages/'
 	);
+}
+
+/**
+ * Register the comic CPT meta fields used by automation tools (e.g. the n8n
+ * Twitter-to-comic workflow) and the parent plugin's `ceo_html_below_comic`
+ * meta box handler.
+ *
+ * Each meta is `single` (one value per post) and registered under its plain
+ * key. `auth_callback` permits any user who can edit the post, matching the
+ * comic REST controller's permission scheme.
+ *
+ * Note: we intentionally do NOT set `show_in_rest => true`. On WP 6.9 / 7.x
+ * the block editor's iframe-mode preload path treats a CPT as REST-active
+ * when any of its meta is REST-visible, and on sites where other plugins
+ * register blocks with `apiVersion < 3` this combination makes the iframe
+ * editor fail to initialise (`global-styles-css-custom-properties-inline-css
+ * was added to the iframe incorrectly`) and silently fall back to the
+ * classic editor. Keeping these keys out of the REST schema avoids that
+ * trigger while leaving direct `get_post_meta` / `update_post_meta` calls —
+ * which is what the parent plugin and this plugin's own endpoints use —
+ * fully functional.
+ */
+function cer_register_comic_meta_for_rest() {
+	$slug = cer_resolve_comic_slug();
+	foreach ( array( 'source_tweet_id', 'source_url', 'ceo_html_below_comic' ) as $key ) {
+		register_post_meta(
+			$slug,
+			$key,
+			array(
+				'single'        => true,
+				'type'          => 'string',
+				'auth_callback' => function () {
+					return current_user_can( 'edit_posts' );
+				},
+			)
+		);
+	}
+}
+
+/**
+ * Force the classic editor for the comic CPT regardless of WP defaults.
+ *
+ * WP 6.9 / 7.x evaluate the block editor's iframe-mode preload path against
+ * REST-visible meta on the post type. On sites where third-party plugins
+ * register blocks with `apiVersion < 3` (e.g. `olympus-google-fonts/google-fonts`,
+ * `emcp/post-title`, `wp-quads/adds`), the iframe editor fails to initialise
+ * with `global-styles-css-custom-properties-inline-css was added to the iframe
+ * incorrectly` and silently falls back to the classic editor. The parent
+ * comic-easel plugin registers several classic-style meta boxes
+ * (`ceo_toggle_in_post`, `ceo_html_below_comic`, `ceo_transcript_in_post`,
+ * etc.) so the editing UX is built around classic; opting in here is the
+ * path of least resistance.
+ *
+ * The filter signature is `use_block_editor_for_post_type( $use_block_editor, $post_type )`
+ * since WP 5.6; we accept `$post_type` directly so we don't need to consult
+ * the global screen state (which can be empty on early `init` calls).
+ *
+ * @param bool   $use_block_editor Whether the block editor is enabled for
+ *                                 the given post type. WP default is true
+ *                                 on any post type that supports 'editor'.
+ * @param string $post_type        The post type slug being evaluated.
+ * @return bool
+ */
+function cer_force_classic_editor_for_comic( $use_block_editor, $post_type = '' ) { // NOSONAR: cer_* snake_case is the project naming convention.
+	// Defensive: older WP releases pass only one argument. Fall back to the
+	// admin screen's post type when $post_type is empty.
+	if ( '' === $post_type && is_admin() && function_exists( 'get_current_screen' ) ) {
+		$screen = get_current_screen();
+		if ( $screen && isset( $screen->post_type ) ) {
+			$post_type = $screen->post_type;
+		}
+	}
+	if ( '' !== $post_type && cer_resolve_comic_slug() === $post_type ) {
+		return false;
+	}
+	return $use_block_editor;
 }
 
 /**
