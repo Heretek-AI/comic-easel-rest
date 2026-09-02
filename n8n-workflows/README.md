@@ -26,11 +26,24 @@ featured (hidden thumbnail) media, and the ceo_html_below_comic block contains
 
 ## Setup
 
-### 1. Import the workflow
+### 1. Import (or re-deploy) the workflow
 
-In your n8n instance: **Workflows → Import from File…** and select
-`twitter-to-comic.json`. Open the imported workflow and you'll be prompted to
-assign credentials to the two HTTP Request nodes that need them:
+The workflow can be deployed two ways:
+
+**a) Import the JSON file** — in your n8n instance, **Workflows → Import from
+File…** and select `twitter-to-comic.json`. Open the imported workflow and
+you'll be prompted to assign credentials to the two HTTP Request nodes that
+need them (see step 2 below).
+
+**b) Re-deploy via the n8n MCP** — the file in this repo is also a snapshot of
+the live workflow (id `t3AFUdqnm0kikFsm`,
+URL `https://node.heretek.one/workflow/t3AFUdqnm0kikFsm`). To rebuild it from
+the SDK source the workflow was authored against, see
+`twitter-to-comic.sdk.ts` — run `n8n-mcp-validate_workflow` against it, then
+`n8n-mcp-create_workflow_from_code`.
+
+After import/deploy, open the workflow in the n8n editor and assign credentials
+to:
 
 - **Resolve WP User** — uses an `httpBasicAuth` credential. Configure it with a
   WordPress username and Application Password that has `edit_posts` /
@@ -42,6 +55,10 @@ assign credentials to the two HTTP Request nodes that need them:
   name to `Authorization` and the value to `Bearer <your X API bearer token>`.
   (Alternatively, store the bearer token in an env var as described below and
   swap to `headerAuth` with a generic value.)
+
+If you re-deploy via the MCP, the two HTTP Request credentials are NOT
+auto-assigned (no existing credentials of those types to reuse). Configure
+them manually after the MCP deploys the workflow.
 
 ### 2. Environment variables
 
