@@ -1,4 +1,4 @@
-# `/twitter-to-comic` — Claude Code skill
+[# `/twitter-to-comic` — Claude Code skill
 
 A Claude Code skill that turns a Twitter/X URL into a draft `comic` post on a
 WordPress site running [`comic-easel-rest`](../../). The agent calls the
@@ -126,4 +126,4 @@ single source of truth.
   `comic-easel-rest.php` `cer_register_comic_meta_for_rest` docblock.
 - Meta-write endpoint registration:
   `includes/class-rest-controller.php` `register_endpoint_set_meta`.
-- Meta-write callback: `functions/settings.php` `cer_set_comic_meta`.
+- Meta-write callback: `functions/settings.php` `cer_set_comic_meta`.](https://raw.githubusercontent.com/Heretek-AI/comic-easel-rest/refs/heads/master/.claude/skills/twitter-to-comic/README.md)
